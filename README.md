@@ -1,6 +1,6 @@
 # PyPoint
 
-Fast Probabilistic Programming for Point Processes
+Fast Probabilistic Programming for Point Processes using Edward and Tensorflow
 
 # Motivation
 
