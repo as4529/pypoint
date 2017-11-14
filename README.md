@@ -29,9 +29,13 @@ We also work on implementing efficient modifications of the algorithm from Adams
 # What's in the files
 
 Simple Model Experiment(Edward).ipynb: KLqp for discretized Cox process on simulated data
+
 Simple Model FEC (Edward).ipynb: KLqp for discretized Cox process on FEC data
+
 kronecker.py: primary file for implementation of Kronecker methods
+
 optimizers.py, simulator.py, kronecker\_utils.py, likelihoods.py: helpers for the kronecker methods
+
 Kronecker Example.ipynb: example of using Kronecker inference on simulated data.
 
 # What's next
