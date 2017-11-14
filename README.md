@@ -12,9 +12,7 @@ We're interested in using GP priors for learning the distributions over intensit
 
 We have points $x$ which lie in some d-dimensional space (e.g. 1D time, 2D space, or 3D space-time). Each of these points denotes a realization from a point process with some unknown rate function $f(x)$. We assume the function $f(x)$ is a random function drawn from a Gaussian Process. In the simple case where we discretize space/time and we assume a Poisson rate, we have
 
-$f \sim GP(mu(x), K(x, x))$
-
-$y(x) \sim Poisson(f(x))$
+![](https://latex.codecogs.com/gif.latex?%5Cbegin%7Balign*%7D%20f%20%5Csim%20GP%28mu%28x%29%2C%20K%28x%2C%20x%29%29%5C%5C%20y%28x%29%20%5Csim%20Poisson%28f%28x%29%29%20%5Cend%7Balign*%7D)
 
 We're also interested in continuous time/space point processes. Inference for this is more complicated, since it requires us to infer rate values where we have not seen any events. We follow Adams et al (2009) for our inference procedure on these processes.
 
