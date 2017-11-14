@@ -1,6 +1,6 @@
 import tensorflow as tf
 import sys
-from kronecker_utils import kron_mvp
+from kronecker import kron_mvp
 
 """
     Conjugate gradient descent optimizer for Kronecker inference
