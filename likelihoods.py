@@ -1,5 +1,8 @@
 import tensorflow as tf
 
+"""
+basic likelihood class
+"""
 
 class Likelihood:
 
@@ -13,7 +16,9 @@ class Likelihood:
         pass
 
 class PoissonLike(Likelihood):
-
+    """
+    Implements Poisson likelihood
+    """
     def log_like(self, y, log_rate):
 
         return tf.multiply(y, log_rate) - tf.exp(log_rate)
