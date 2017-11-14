@@ -4,7 +4,7 @@ Fast Probabilistic Programming for Point Processes using Edward and Tensorflow
 
 # Motivation
 
-In this project, we explore efficient and flexible Bayesian inference for point process models using probabilistic programming. Our original interest was in modeling a publicly available dataset from the Federal Election Commission, which contains information on donations from individuals to candidates for federal office. We wanted to model the spatiotemporal dynamics of donations to answer questions like these: given the past few months of donation data, where should candidate ${X}$ expect to get more donations than candidate ${Y}$ over the next month? Where should she focus her resources?
+In this project, we explore efficient and flexible Bayesian inference for point process models using probabilistic programming. Our original interest was in modeling a publicly available dataset from the Federal Election Commission, which contains information on donations from individuals to candidates for federal office. We wanted to model the spatiotemporal dynamics of donations to answer questions like these: given the past few months of donation data, where should candidate $X$ expect to get more donations than candidate ${Y}$ over the next month? Where should she focus her resources?
 
 # Models and methods we're interested in
 
