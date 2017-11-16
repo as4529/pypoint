@@ -30,3 +30,4 @@ class PoissonLike(Likelihood):
     def hess(self, y, log_rate):
 
         return -tf.exp(log_rate)
+
