@@ -38,6 +38,11 @@ def sim_X(D=2, N_dim=30, lower=0, upper=100):
 
     return np.array(list(itertools.product(*grid)))
 
+def sim_X_equispaced(D=2, N_dim=20, lower = 0, upper=100):
+
+    grid = [np.arange(lower, upper, (upper-lower)*1.0/N_dim) for d in range(D)]
+
+    return np.array(list(itertools.product(*grid)))
 
 def poisson_draw(f, noise_val):
     """

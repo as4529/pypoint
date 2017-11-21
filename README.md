@@ -4,13 +4,13 @@ Fast Probabilistic Programming for Point Processes using Edward and Tensorflow
 
 # Motivation
 
-In this project, we explore efficient and flexible Bayesian inference for point process models using probabilistic programming. Our original interest was in modeling a publicly available dataset from the Federal Election Commission, which contains information on donations from individuals to candidates for federal office. We wanted to model the spatiotemporal dynamics of donations to answer questions like these: given the past few months of donation data, where should candidate X expect to get more donations than candidate Y over the next month? Where should she focus her resources?
+In this project, we explore efficient and flexible Bayesian inference for point process models using probabilistic programming. Our original interest was in modeling a publicly available dataset from the Federal Election Commission, which contains information on donations from individuals to candidates for federal office. We wanted to model the spatiotemporal dynamics of donations to answer questions like these: given the past few months of donation data, where should candidate $$X$$ expect to get more donations than candidate Y over the next month? Where should she focus her resources?
 
 # Models and methods we're interested in
 
 We're interested in using GP priors for learning the distributions over intensity functions of point process models. The basic model is as follows (there are a few variations on it): 
 
-We have points $x$ which lie in some d-dimensional space (e.g. 1D time, 2D space, or 3D space-time). Each of these points denotes a realization from a point process with some unknown rate function $f(x)$. We assume the function $f(x)$ is a random function drawn from a Gaussian Process. In the simple case where we discretize space/time and we assume a Poisson rate, we have
+We have points $$x$$ which lie in some d-dimensional space (e.g. 1D time, 2D space, or 3D space-time). Each of these points denotes a realization from a point process with some unknown rate function $$f(x)$$. We assume the function $f(x)$ is a random function drawn from a Gaussian Process. In the simple case where we discretize space/time and we assume a Poisson rate, we have
 
 ![](https://latex.codecogs.com/gif.latex?%5Cbegin%7Balign*%7D%20f%20%5Csim%20GP%28mu%28x%29%2C%20K%28x%2C%20x%29%29%5C%5C%20y%28x%29%20%5Csim%20Poisson%28f%28x%29%29%20%5Cend%7Balign*%7D)
 
