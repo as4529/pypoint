@@ -25,23 +25,26 @@ class KroneckerSolver:
             tau (float): Newton line search hyperparam
         """
 
+
+        self.X = X
+        self.y = y
+        self.verbose = verbose
+
         self.kernel = kernel
         self.mu = mu
         self.likelihood = likelihood
         self.Ks = self.construct_Ks()
         self.K_eigs = [tf.self_adjoint_eig(K) for K in self.Ks]
         self.k_diag = k_diag
+        self.root_eigdecomp = self.sqrt_eig()
         self.mask = mask
-        
-        self.X = X
-        self.y = y
-        self.verbose = verbose
 
         self.alpha = tf.zeros(shape=[X.shape[0]], dtype = tf.float32)
         self.W = tf.zeros(shape = [X.shape[0]])
         self.grads = tf.zeros(shape = [X.shape[0]])
 
-        self.opt = CGOptimizer()
+        self.step_opt = CGOptimizer(self.cg_prod_step)
+        self.var_opt = CGOptimizer(self.cg_prod_var)
         self.f = self.mu
         self.tau = tau
         self.grad_func = tfe.gradients_function(self.likelihood.log_like, [1])
@@ -109,9 +112,9 @@ class KroneckerSolver:
         b = tf.multiply(self.W, self.f - self.mu) + self.grads
 
         if self.k_diag is not None:
-            z = self.opt.cg(tf.multiply(1.0/tf.sqrt(self.W), b), precondition= self.k_diag)
+            z = self.step_opt.cg(tf.multiply(1.0/tf.sqrt(self.W), b), precondition= self.k_diag)
         else:
-            z = self.opt.cg(tf.multiply(1.0/tf.sqrt(self.W), b))
+            z = self.step_opt.cg(tf.multiply(1.0/tf.sqrt(self.W), b))
 
         delta_alpha = tf.multiply(tf.sqrt(self.W), z) - self.alpha
 
@@ -169,7 +172,7 @@ class KroneckerSolver:
         return out
 
 
-    def cg_prod(self, p):
+    def cg_prod_step(self, p):
 
         if self.k_diag is None:
             return p + tf.multiply(tf.sqrt(self.W), kron_mvp(self.Ks, tf.multiply(tf.sqrt(self.W), p)))
@@ -311,19 +314,39 @@ class KroneckerSolver:
     def variance(self, n_s):
 
         n = self.X.shape[0]
+        var = tf.zeros([self.X.shape[0]])
+        id_norm = tf.contrib.distributions.MultivariateNormalDiag(tf.zeros([n]), tf.ones([n]))
 
         for i in range(n_s):
 
-            g_m = tf.contrib.distributions.MultivariateNormalDiag(tf.zeros(n), tf.eye(n))
-            g_n = tf.contrib.distributions.MultivariateNormalDiag(tf.zeros(n), tf.eye(n))
+            g_m = tf.expand_dims(id_norm.sample(), 1)
+            g_n = id_norm.sample()
 
-            eig_K = kron_list([tf.matmul(v, tf.matmul(tf.sqrt(e), v)) for e,v in self.K_eigs])
+            right_side = tf.squeeze(tf.matmul(self.root_eigdecomp, g_m)) + tf.multiply(1.0/tf.sqrt(self.W), g_n)
 
-            right_side = tf.matmul(eig_K, g_m) + g_n
+            r = self.var_opt.cg(right_side)
+            var += tf.square(kron_mvp(self.Ks, r))
 
-            Ar = self.opt.cg(right_side, A = self.Ks)
+        return tf.ones([self.X.shape[0]]) - var/n_s*1.0
 
 
+    def sqrt_eig(self):
+
+        res = []
+
+        for e, v in self.K_eigs:
+            e_root_diag = tf.sqrt(e)
+            e_root = tf.diag(tf.where(tf.is_nan(e_root_diag), tf.zeros_like(e_root_diag), tf.sqrt(e_root_diag)))
+            res.append(tf.matmul(tf.matmul(v, e_root), tf.transpose(v)))
+
+        res = tf.squeeze(kron_list(res))
+        self.root_eigdecomp = tf.constant(res)
+
+        return res
+
+    def cg_prod_var(self, p):
+
+        return tf.squeeze(kron_mvp(self.Ks, p)) + tf.multiply(1.0/self.W, p)
 
     def predict_mean(self, x_new):
 
@@ -405,7 +428,7 @@ class CGOptimizer:
 
         return p, count, x, r, max_it, precondition, z
 
-    def cg(self, b, x=None, A= None, precondition=None, z=None):
+    def cg(self, b, x=None, precondition=None, z=None):
         """
         solves linear system Ax = b
         Args:
