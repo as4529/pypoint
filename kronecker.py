@@ -54,7 +54,6 @@ class KroneckerSolver:
         self.hess_func = tfe.gradients_function(self.grad_func, [1])
 
 
-
     def construct_Ks(self, kernel=None):
         """
 
@@ -155,7 +154,10 @@ class KroneckerSolver:
 
         out = tf.while_loop(self.conv, self.step, [max_it, it, prev, delta])
         self.f = kron_mvp(self.Ks, self.alpha) + self.mu
-        self.grads = self.grad_func(self.y, self.f)
+        self.grads = self.grad_func(self.y, self.f + tf.multiply(self.k_diag, self.alpha))[0]
+        self.W = -self.hess_func(self.y, self.f + tf.multiply(self.k_diag, self.alpha))[0]
+        self.W = tf.where(tf.greater(self.W, 1e9), tf.zeros_like(self.W), self.W)
+
         return out
 
     def cg_prod_step(self, p):
@@ -303,13 +305,12 @@ class KroneckerSolver:
         for i in range(n_s):
             g_m = id_norm.sample()
             g_n = id_norm.sample()
-
             right_side = tf.squeeze(tf.matmul(self.root_eigdecomp, tf.expand_dims(tf.multiply(tf.sqrt(self.W), g_m), 1)))+\
                                    tf.squeeze(g_n)
             r = self.var_opt.cg(right_side)
             var += tf.square(kron_mvp(self.Ks, tf.multiply(tf.sqrt(self.W), r)))
 
-        return tf.ones([self.X.shape[0]]) - var/n_s*1.0
+        return tf.nn.relu(tf.ones([self.X.shape[0]]) - var/n_s*1.0)
 
     def sqrt_eig(self):
 
@@ -317,7 +318,7 @@ class KroneckerSolver:
 
         for e, v in self.K_eigs:
             e_root_diag = tf.sqrt(e)
-            e_root = tf.diag(tf.where(tf.is_nan(e_root_diag), tf.zeros_like(e_root_diag), tf.sqrt(e_root_diag)))
+            e_root = tf.diag(tf.where(tf.is_nan(e_root_diag), tf.zeros_like(e_root_diag), e_root_diag))
             res.append(tf.matmul(tf.matmul(v, e_root), tf.transpose(v)))
 
         res = tf.squeeze(kron_list(res))
@@ -361,7 +362,7 @@ class CGOptimizer:
         Returns: false if converged, true if not
 
         """
-        return tf.logical_and(tf.greater(tf.reduce_sum(tf.multiply(r, r)), 1e-2),
+        return tf.logical_and(tf.greater(tf.reduce_sum(tf.multiply(r, r)), 1e-5),
                                              tf.less(count, max_it))
 
     def cg_body(self, p, count, x, r, max_it):
@@ -391,7 +392,7 @@ class CGOptimizer:
         x += alpha * p
         r -= alpha * Bp
 
-        if tf.reduce_sum(tf.multiply(r, r)).numpy() < 1e-2:
+        if tf.reduce_sum(tf.multiply(r, r)).numpy() < 1e-5:
             return p, count, x, r, max_it
 
         norm_next = tf.reduce_sum(tf.multiply(r, r))
