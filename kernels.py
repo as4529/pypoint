@@ -46,14 +46,17 @@ class RBF:
 
         return [self.variance, self.length_scale]
 
-class SpectralMixture:
+class Matern52:
+    def __init__(self, rho, variance):
+        """
+        modified from Edward to work with eager excecution
+        Args:
+            sigma ():
+            length_scale ():
+        """
 
-    def __init__(self, w, mu, v):
+        self.rho = rho
 
-        self.w = w
-        self.mu = mu
-        self.v = v
+        def eval(self, X, X2=None):
+            return 0
 
-    def eval(self, X_1, X_2):
-
-        return 0

@@ -4,17 +4,17 @@ import sys
 import tensorflow.contrib.eager as tfe
 tfe.enable_eager_execution()
 from copy import deepcopy
-from likelihoods import PoissonLike
+from operator import mul
 
 """
 Class for Kronecker inference of GPs
 
 """
 
+
 class KroneckerSolver:
 
-
-    def __init__(self, mu, kernel, likelihood, X, y, tau=0.5, k_diag=None, mask=None, verbose=False):
+    def __init__(self, mu, kernel, likelihood, X, y, tau=0.5, k_diag=None, mask=None, verbose = False):
         """
 
         Args:
@@ -24,11 +24,9 @@ class KroneckerSolver:
             y (np.array): output
             tau (float): Newton line search hyperparam
         """
-
-
+        self.verbose = verbose
         self.X = X
         self.y = y
-        self.verbose = verbose
 
         self.kernel = kernel
         self.mu = mu
@@ -36,7 +34,11 @@ class KroneckerSolver:
         self.Ks = self.construct_Ks()
         self.K_eigs = [tf.self_adjoint_eig(K) for K in self.Ks]
         self.k_diag = k_diag
-        self.root_eigdecomp = self.sqrt_eig()
+
+        if self.k_diag is not None:
+            self.precondition = 1.0/tf.sqrt(self.k_diag)
+        else:
+            self.precondition = None
         self.mask = mask
 
         self.alpha = tf.zeros(shape=[X.shape[0]], dtype = tf.float32)
@@ -47,9 +49,10 @@ class KroneckerSolver:
         self.var_opt = CGOptimizer(self.cg_prod_var)
         self.f = self.mu
         self.tau = tau
-        self.grad_func = tfe.gradients_function(self.likelihood.log_like, [1])
-        self.hess_func = tfe.gradients_function(self.grad_func, [1])
-
+        #self.grad_func = tfe.gradients_function(self.likelihood.log_like, [1])
+        #self.hess_func = tfe.gradients_function(self.grad_func, [1])
+        self.grad_func = likelihood.grad
+        self.hess_func = likelihood.hess
 
 
     def construct_Ks(self, kernel=None):
@@ -69,7 +72,7 @@ class KroneckerSolver:
 
         return Ks
 
-    def step(self, max_it, it, prev, delta, verbose = False):
+    def step(self, max_it, it, prev, delta):
         """
         Runs one step of Kronecker inference
         Args:
@@ -103,22 +106,23 @@ class KroneckerSolver:
             print "Iteration: ", it
             print " psi: ", psi
 
-
-        self.grads = self.grad_func(self.y, self.f)[0]
-        hess = self.hess_func(self.y, self.f)[0]
+        self.grads = self.grad_func(self.y, self.f)
+        hess = self.hess_func(self.y, self.f)
         self.W = -hess
 
+        if self.precondition is not None:
+            self.precondition = 1.0 / tf.multiply(tf.sqrt(self.k_diag), tf.sqrt(self.W))
 
         b = tf.multiply(self.W, self.f - self.mu) + self.grads
 
-        if self.k_diag is not None:
-            z = self.step_opt.cg(tf.multiply(1.0/tf.sqrt(self.W), b), precondition= self.k_diag)
+        if self.precondition is not None:
+            z = self.step_opt.cg(tf.multiply(self.precondition,
+                                             tf.multiply(1.0/tf.sqrt(self.W), b)))
         else:
             z = self.step_opt.cg(tf.multiply(1.0/tf.sqrt(self.W), b))
 
         delta_alpha = tf.multiply(tf.sqrt(self.W), z) - self.alpha
-
-        ls = self.line_search(self.alpha, delta_alpha, self.y, psi, 20, self.mu)
+        ls = self.line_search(delta_alpha, psi, 40)
         step_size = ls[1]
 
         if self.verbose:
@@ -127,12 +131,11 @@ class KroneckerSolver:
 
         delta = prev - psi
         prev = psi
-        self.alpha = tf.cond(tf.greater(delta, 1e-5), lambda: self.alpha + delta_alpha*step_size, lambda: self.alpha)
+        self.alpha = self.alpha + delta_alpha*step_size
         self.alpha = tf.where(tf.is_nan(self.alpha), tf.ones_like(self.alpha) * 1e-9, self.alpha)
         it = it + 1
 
         return max_it, it, prev, delta
-
 
     def conv(self, max_it, it, prev, delta):
         """
@@ -148,7 +151,6 @@ class KroneckerSolver:
 
         """
         return tf.logical_and(tf.less(it, max_it), tf.greater(delta, 1e-5))
-
 
     def run(self, max_it):
         """
@@ -167,22 +169,25 @@ class KroneckerSolver:
 
         out = tf.while_loop(self.conv, self.step, [max_it, it, prev, delta])
         self.f = kron_mvp(self.Ks, self.alpha) + self.mu
-        self.grads = self.grad_func(self.y, self.f)[0]
+        self.grads = self.grad_func(self.y, self.f)
 
         return out
 
-
     def cg_prod_step(self, p):
 
-        if self.k_diag is None:
+        if self.precondition is None:
             return p + tf.multiply(tf.sqrt(self.W), kron_mvp(self.Ks, tf.multiply(tf.sqrt(self.W), p)))
 
-        else:
-            Wp = tf.multiply(tf.sqrt(self.W), p)
-            return p + tf.multiply(tf.sqrt(self.W), kron_mvp(self.Ks, Wp) + tf.multiply(self.k_diag, Wp))
+        Cp = tf.multiply(self.precondition, p)
 
-    def search_step(self, obj_prev, obj_search, min_obj, alpha, delta_alpha,
-                    y, step_size, grad_norm, max_it, t, mu, opt_step):
+        return tf.multiply(self.precondition, Cp) +\
+            tf.multiply(tf.multiply(self.precondition, tf.multiply(self.W, self.k_diag)),
+                             Cp) +\
+            tf.multiply(tf.multiply(self.precondition, tf.sqrt(self.W)),
+                            kron_mvp(self.Ks, tf.multiply(tf.sqrt(self.W), Cp)))
+
+    def search_step(self, obj_prev, obj_search, min_obj, delta_alpha,
+                   step_size, max_it, t, opt_step):
         """
         Executes one step of a backtracking line search
         Args:
@@ -202,38 +207,36 @@ class KroneckerSolver:
         Returns:
 
         """
-        alpha_search = tf.squeeze(alpha + step_size * delta_alpha)
-
-        f_search = tf.squeeze(kron_mvp(self.Ks, alpha_search)) + mu
-
-        if self.k_diag is not None:
-            f_search += tf.multiply(self.k_diag, alpha_search)
+        alpha_search = tf.squeeze(self.alpha + step_size * delta_alpha)
+        f_search = tf.squeeze(kron_mvp(self.Ks, alpha_search)) + self.mu
 
         if self.mask is not None:
-            y_lim = tf.boolean_mask(self.y, self.mask)
-            f_lim = tf.boolean_mask(f_search, self.mask)
-            alpha_lim = tf.boolean_mask(alpha_search, self.mask)
-            mu_lim = tf.boolean_mask(self.mu, self.mask)
-            obj_search = -tf.reduce_sum(self.likelihood.log_like(y_lim, f_lim)) + \
-                  0.5 * tf.reduce_sum(tf.multiply(alpha_lim, f_lim - mu_lim))
+            f_search += tf.multiply(self.k_diag, alpha_search)
 
-        else:
-            obj_search = -tf.reduce_sum(self.likelihood.log_like(y, f_search)) + 0.5 * tf.reduce_sum(
-                tf.multiply(alpha_search, f_search - mu))
-
-
+        obj_search = self.eval_obj(f_search, alpha_search)
         opt_step = tf.cond(tf.greater(min_obj, obj_search), lambda: step_size, lambda: opt_step)
         min_obj = tf.cond(tf.greater(min_obj, obj_search), lambda: obj_search, lambda: min_obj)
-
         step_size = self.tau * step_size
         t = t + 1
 
-        return obj_prev, obj_search, min_obj, alpha, delta_alpha, y,\
-               step_size, grad_norm, max_it, t, mu, opt_step
+        return obj_prev, obj_search, min_obj, delta_alpha,\
+               step_size, max_it, t, opt_step
 
+    def eval_obj(self, f = None, alpha = None):
 
-    def converge_cond(self, obj_prev, obj_search, min_obj, alpha,
-                      delta_alpha, y, step_size, grad_norm, max_it, t, mu, opt_step):
+        if self.mask is not None:
+            y_lim = tf.boolean_mask(self.y, self.mask)
+            f_lim = tf.boolean_mask(f, self.mask)
+            alpha_lim = tf.boolean_mask(alpha, self.mask)
+            mu_lim = tf.boolean_mask(self.mu, self.mask)
+            return -tf.reduce_sum(self.likelihood.log_like(y_lim, f_lim)) + \
+                         0.5 * tf.reduce_sum(tf.multiply(alpha_lim, f_lim - mu_lim))
+
+        return -tf.reduce_sum(self.likelihood.log_like(self.y, f)) + 0.5 * tf.reduce_sum(
+            tf.multiply(alpha, f - self.mu))
+
+    def converge_cond(self, obj_prev, obj_search, min_obj,
+                      delta_alpha, step_size, max_it, t, opt_step):
         """
 
         Assesses convergence of line search. Same params as above.
@@ -242,9 +245,7 @@ class KroneckerSolver:
 
         return tf.logical_and(tf.less(t, max_it), tf.less(obj_prev - obj_search, step_size*t))
 
-
-
-    def line_search(self, alpha, delta_alpha, y, obj_prev, max_it, mu):
+    def line_search(self, delta_alpha, obj_prev, max_it):
         """
         Executes line search for optimal Newton step
         Args:
@@ -261,18 +262,15 @@ class KroneckerSolver:
         obj_search = sys.float_info.max
         min_obj = obj_prev
 
-        step_size = 5.0
+        step_size = 2.0
         opt_step = 0.0
 
-        grad_norm = tf.reduce_sum(tf.multiply(alpha, alpha))
         t = 1
 
-
-        res = tf.while_loop(self.converge_cond, self.search_step, [obj_prev, obj_search, min_obj, alpha, delta_alpha,
-                                                         y, step_size, grad_norm, max_it, t, mu, opt_step])
+        res = tf.while_loop(self.converge_cond, self.search_step, [obj_prev, obj_search, min_obj, delta_alpha,
+                                                         step_size, max_it, t, opt_step])
 
         return res[2], res[-1]
-
 
     def marginal(self, Ks_new = None):
         """
@@ -313,6 +311,8 @@ class KroneckerSolver:
 
     def variance(self, n_s):
 
+        self.root_eigdecomp = self.sqrt_eig()
+
         n = self.X.shape[0]
         var = tf.zeros([self.X.shape[0]])
         id_norm = tf.contrib.distributions.MultivariateNormalDiag(tf.zeros([n]), tf.ones([n]))
@@ -322,13 +322,13 @@ class KroneckerSolver:
             g_m = tf.expand_dims(id_norm.sample(), 1)
             g_n = id_norm.sample()
 
-            right_side = tf.squeeze(tf.matmul(self.root_eigdecomp, g_m)) + tf.multiply(1.0/tf.sqrt(self.W), g_n)
+            right_side = tf.squeeze(tf.matmul(self.root_eigdecomp, g_m)) + tf.multiply(tf.sqrt(self.k_diag), tf.squeeze(g_m)) + \
+                         tf.multiply(1.0/tf.sqrt(self.W), g_n)
 
             r = self.var_opt.cg(right_side)
             var += tf.square(kron_mvp(self.Ks, r))
 
         return tf.ones([self.X.shape[0]]) - var/n_s*1.0
-
 
     def sqrt_eig(self):
 
@@ -346,7 +346,7 @@ class KroneckerSolver:
 
     def cg_prod_var(self, p):
 
-        return tf.squeeze(kron_mvp(self.Ks, p)) + tf.multiply(1.0/self.W, p)
+        return tf.multiply(self.k_diag, p) + tf.squeeze(kron_mvp(self.Ks, p)) + tf.multiply(1.0 / self.W, p)
 
     def predict_mean(self, x_new):
 
@@ -361,14 +361,13 @@ class KroneckerSolver:
 
 
 
-
 class CGOptimizer:
 
     def __init__(self, cg_prod = None):
 
         self.cg_prod = cg_prod
 
-    def cg_converged(self, p, count, x, r, max_it, precondition, z):
+    def cg_converged(self, p, count, x, r, max_it):
         """
         Assesses convergence of CG
         Args:
@@ -383,9 +382,10 @@ class CGOptimizer:
         Returns: false if converged, true if not
 
         """
-        return tf.logical_and(tf.greater(tf.reduce_sum(tf.multiply(r, r)), 1e-5), tf.less(count, max_it))
+        return tf.logical_and(tf.greater(tf.reduce_sum(tf.multiply(r, r)), 1e-3),
+                                             tf.less(count, max_it))
 
-    def cg_body(self, p, count, x, r, max_it, precondition, z):
+    def cg_body(self, p, count, x, r, max_it):
         """
 
         Executes one step of conjugate gradient descent
@@ -404,31 +404,26 @@ class CGOptimizer:
         count = count + 1
         Bp = self.cg_prod(p)
 
-        if precondition is not None:
-            norm_k = tf.reduce_sum(tf.multiply(r, z))
-        else:
-            norm_k = tf.reduce_sum(tf.multiply(r, r))
+        self.Bp = Bp
+        self.p = p
 
-        alpha = norm_k / tf.reduce_sum(tf.multiply(Bp, p))
+        norm_k = tf.reduce_sum(tf.multiply(r, r))
+
+        alpha = norm_k / tf.reduce_sum(tf.multiply(p, Bp))
         x += alpha * p
         r -= alpha * Bp
 
-        if precondition is not None:
-            z = tf.multiply(1.0/precondition, r)
-            norm_next = tf.reduce_sum(tf.multiply(z, r))
-        else:
-            norm_next = tf.reduce_sum(tf.multiply(r, r))
+        if tf.reduce_sum(tf.multiply(r, r)).numpy() < 1e-3:
+            return p, count, x, r, max_it
 
+        norm_next = tf.reduce_sum(tf.multiply(r, r))
         beta = norm_next / norm_k
 
-        if precondition is not None:
-            p = z + beta*p
-        else:
-            p = r + beta*p
+        p = r + beta*p
 
-        return p, count, x, r, max_it, precondition, z
+        return p, count, x, r, max_it
 
-    def cg(self, b, x=None, precondition=None, z=None):
+    def cg(self, b, x=None, z=None, max_it = None):
         """
         solves linear system Ax = b
         Args:
@@ -440,26 +435,23 @@ class CGOptimizer:
         Returns: returns x that solves linear system
 
         """
+
         count = tf.constant(0)
         n = b.get_shape().as_list()[0]
+
+        if max_it is None:
+            max_it = 2*n
 
         if not x:
             x = tf.zeros(shape=[n])
 
         r =  b - self.cg_prod(x)
-
-        if precondition is not None:
-            z = tf.multiply(1.0/precondition, r)
-            p = z
-
-        else:
-            p = r
+        p = r
 
         fin = tf.while_loop(self.cg_converged, self.cg_body, [p, count, x,
-                                                              r, 2 * n, precondition, z])
+                                                              r, max_it])
 
         return fin[2]
-
 
 
 class KernelLearner:
@@ -507,7 +499,7 @@ class KernelLearner:
 
         kernel = self.kernel(*params)
         solver = KroneckerSolver(self.mu, kernel, self.likelihood, self.X, self.y,
-                                 self.tau, self.k_diag, self.mask, verbose=False)
+                                 self.tau, self.k_diag, self.mask)
         solver.run(10)
         marg = solver.marginal()
         return marg
@@ -554,6 +546,7 @@ def kron_list(matrices):
 
     return out
 
+
 def kron_mvp(Ks, v):
     """
     Matrix vector product using Kronecker structure
@@ -566,16 +559,12 @@ def kron_mvp(Ks, v):
 
     """
 
-    V_rows = Ks[0].shape[0]
-    V_cols = v.shape[0] / V_rows
-    V = tf.transpose(tf.reshape(v, (V_rows, V_cols)))
-    mvp = V
+    mvp = tf.transpose(tf.reshape(tf.expand_dims(v, 1), [-1, Ks[-1].shape.as_list()[0]]))
 
-    for k in reversed(Ks):
-        mvp = tf.reshape(tf.transpose(tf.matmul(k, mvp)), [V_rows, V_cols])
+    for idx, k in enumerate(reversed(Ks)):
+        if idx > 0:
+            rows = k.shape.as_list()[0]
+            mvp = tf.reshape(mvp, [rows, -1])
+        mvp = tf.transpose(tf.matmul(k, mvp))
 
-    return tf.squeeze(tf.reshape(tf.transpose(mvp), [1, -1]))
-
-
-
-
+    return tf.reshape(tf.transpose(mvp), [-1])
