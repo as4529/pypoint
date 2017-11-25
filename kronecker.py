@@ -34,6 +34,7 @@ class KroneckerSolver:
         self.Ks = self.construct_Ks()
         self.K_eigs = [tf.self_adjoint_eig(K) for K in self.Ks]
         self.k_diag = k_diag
+        self.root_eigdecomp = None
 
         if self.k_diag is not None:
             self.precondition = 1.0/tf.sqrt(self.k_diag)
@@ -49,10 +50,9 @@ class KroneckerSolver:
         self.var_opt = CGOptimizer(self.cg_prod_var)
         self.f = self.mu
         self.tau = tau
-        #self.grad_func = tfe.gradients_function(self.likelihood.log_like, [1])
-        #self.hess_func = tfe.gradients_function(self.grad_func, [1])
-        self.grad_func = likelihood.grad
-        self.hess_func = likelihood.hess
+        self.grad_func = tfe.gradients_function(self.likelihood.log_like, [1])
+        self.hess_func = tfe.gradients_function(self.grad_func, [1])
+
 
 
     def construct_Ks(self, kernel=None):
@@ -91,28 +91,15 @@ class KroneckerSolver:
         if self.k_diag is not None:
             self.f += tf.multiply(self.alpha, self.k_diag)
 
-        if self.mask is not None:
-            y_lim = tf.boolean_mask(self.y, self.mask)
-            f_lim = tf.boolean_mask(self.f, self.mask)
-            alpha_lim = tf.boolean_mask(self.alpha, self.mask)
-            mu_lim = tf.boolean_mask(self.mu, self.mask)
-            psi = -tf.reduce_sum(self.likelihood.log_like(y_lim, f_lim)) + \
-                  0.5 * tf.reduce_sum(tf.multiply(alpha_lim, f_lim - mu_lim))
-        else:
-            psi = -tf.reduce_sum(self.likelihood.log_like(self.y, self.f)) +\
-              0.5*tf.reduce_sum(tf.multiply(self.alpha, self.f-self.mu))
+        psi = self.eval_obj(self.f, self.alpha)
 
         if self.verbose:
             print "Iteration: ", it
             print " psi: ", psi
 
-        self.grads = self.grad_func(self.y, self.f)
-        hess = self.hess_func(self.y, self.f)
+        self.grads = self.grad_func(self.y, self.f)[0]
+        hess = self.hess_func(self.y, self.f)[0]
         self.W = -hess
-
-        if self.precondition is not None:
-            self.precondition = 1.0 / tf.multiply(tf.sqrt(self.k_diag), tf.sqrt(self.W))
-
         b = tf.multiply(self.W, self.f - self.mu) + self.grads
 
         if self.precondition is not None:
@@ -122,8 +109,7 @@ class KroneckerSolver:
             z = self.step_opt.cg(tf.multiply(1.0/tf.sqrt(self.W), b))
 
         delta_alpha = tf.multiply(tf.sqrt(self.W), z) - self.alpha
-        ls = self.line_search(delta_alpha, psi, 40)
-        step_size = ls[1]
+        step_size = self.line_search(delta_alpha, psi, 20)
 
         if self.verbose:
             print "step", step_size
@@ -170,14 +156,12 @@ class KroneckerSolver:
         out = tf.while_loop(self.conv, self.step, [max_it, it, prev, delta])
         self.f = kron_mvp(self.Ks, self.alpha) + self.mu
         self.grads = self.grad_func(self.y, self.f)
-
         return out
 
     def cg_prod_step(self, p):
 
         if self.precondition is None:
             return p + tf.multiply(tf.sqrt(self.W), kron_mvp(self.Ks, tf.multiply(tf.sqrt(self.W), p)))
-
         Cp = tf.multiply(self.precondition, p)
 
         return tf.multiply(self.precondition, Cp) +\
@@ -261,16 +245,14 @@ class KroneckerSolver:
         """
         obj_search = sys.float_info.max
         min_obj = obj_prev
-
         step_size = 2.0
         opt_step = 0.0
-
         t = 1
 
         res = tf.while_loop(self.converge_cond, self.search_step, [obj_prev, obj_search, min_obj, delta_alpha,
                                                          step_size, max_it, t, opt_step])
 
-        return res[2], res[-1]
+        return res[-1]
 
     def marginal(self, Ks_new = None):
         """
@@ -311,22 +293,21 @@ class KroneckerSolver:
 
     def variance(self, n_s):
 
-        self.root_eigdecomp = self.sqrt_eig()
+        if self.root_eigdecomp is None:
+            self.root_eigdecomp = self.sqrt_eig()
 
         n = self.X.shape[0]
         var = tf.zeros([self.X.shape[0]])
         id_norm = tf.contrib.distributions.MultivariateNormalDiag(tf.zeros([n]), tf.ones([n]))
 
         for i in range(n_s):
-
-            g_m = tf.expand_dims(id_norm.sample(), 1)
+            g_m = id_norm.sample()
             g_n = id_norm.sample()
 
-            right_side = tf.squeeze(tf.matmul(self.root_eigdecomp, g_m)) + tf.multiply(tf.sqrt(self.k_diag), tf.squeeze(g_m)) + \
-                         tf.multiply(1.0/tf.sqrt(self.W), g_n)
-
+            right_side = tf.squeeze(tf.matmul(self.root_eigdecomp, tf.expand_dims(tf.multiply(tf.sqrt(self.W), g_m), 1)))+\
+                                   tf.squeeze(g_n)
             r = self.var_opt.cg(right_side)
-            var += tf.square(kron_mvp(self.Ks, r))
+            var += tf.square(kron_mvp(self.Ks, tf.multiply(tf.sqrt(self.W), r)))
 
         return tf.ones([self.X.shape[0]]) - var/n_s*1.0
 
@@ -346,15 +327,13 @@ class KroneckerSolver:
 
     def cg_prod_var(self, p):
 
-        return tf.multiply(self.k_diag, p) + tf.squeeze(kron_mvp(self.Ks, p)) + tf.multiply(1.0 / self.W, p)
+        return p + tf.multiply(tf.sqrt(self.W), tf.squeeze(kron_mvp(self.Ks, tf.multiply(tf.sqrt(self.W), p))))
 
     def predict_mean(self, x_new):
 
         k_dims = [self.kernel.eval(np.expand_dims(np.unique(self.X[:, d]), 1), np.expand_dims(x_new[:, d], 1))
                   for d in self.X.shape[1]]
-
         kx = tf.squeeze(kron_list(k_dims))
-
         mean = tf.reduce_sum(tf.multiply(kx, self.alpha)) + self.mu[0]
 
         return mean
@@ -382,7 +361,7 @@ class CGOptimizer:
         Returns: false if converged, true if not
 
         """
-        return tf.logical_and(tf.greater(tf.reduce_sum(tf.multiply(r, r)), 1e-3),
+        return tf.logical_and(tf.greater(tf.reduce_sum(tf.multiply(r, r)), 1e-2),
                                              tf.less(count, max_it))
 
     def cg_body(self, p, count, x, r, max_it):
@@ -408,12 +387,11 @@ class CGOptimizer:
         self.p = p
 
         norm_k = tf.reduce_sum(tf.multiply(r, r))
-
         alpha = norm_k / tf.reduce_sum(tf.multiply(p, Bp))
         x += alpha * p
         r -= alpha * Bp
 
-        if tf.reduce_sum(tf.multiply(r, r)).numpy() < 1e-3:
+        if tf.reduce_sum(tf.multiply(r, r)).numpy() < 1e-2:
             return p, count, x, r, max_it
 
         norm_next = tf.reduce_sum(tf.multiply(r, r))
@@ -435,7 +413,6 @@ class CGOptimizer:
         Returns: returns x that solves linear system
 
         """
-
         count = tf.constant(0)
         n = b.get_shape().as_list()[0]
 
@@ -447,6 +424,7 @@ class CGOptimizer:
 
         r =  b - self.cg_prod(x)
         p = r
+
 
         fin = tf.while_loop(self.cg_converged, self.cg_body, [p, count, x,
                                                               r, max_it])
