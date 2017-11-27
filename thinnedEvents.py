@@ -135,12 +135,12 @@ class ThinnedEventsSampler:
 		i = tf.Variable(0)
 		self.x_K, self.y_K, self.x_M, self.y_M, i = tf.while_loop(self.thinned_cond, self.thinned_step, [self.x_K, self.y_K, self.x_M, self.y_M, i])
 		
-		print("Thinning completed")
+#print("Thinning completed")
 		# Sample thinned locations
 		it = tf.Variable(0)
 		self.x_K, self.y_K, self.x_M, self.y_M, it = tf.while_loop(self.sample_cond, self.sample_step, [self.x_K, self.y_K, self.x_M, self.y_M, it])
 		
-		print("Locations found")
+#print("Locations found")
 
 		with tf.Session() as sess:
 			sess.run(tf.global_variables_initializer())
