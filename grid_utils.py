@@ -70,3 +70,13 @@ def fill_grid(X, y):
     y_full[obs_idx] = y
 
     return X_grid, y_full, obs_idx, imag_idx
+
+def get_partial_grid(X, y = None, prop = 0.3):
+
+    D = X.shape[1]
+    x_dims = [np.unique(X[:, d]) for d in range(D)]
+
+    grid_part = np.zeros([x_d.shape[0] for x_d in x_dims])
+
+
+    return 0
