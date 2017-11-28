@@ -1,18 +1,20 @@
 import numpy as np
 import GPy
 import tensorflow as tf
+import itertools
 from tensorflow.contrib.distributions import  Bernoulli
 import tensorflow.contrib.eager as tfe
 tfe.enable_eager_execution()
 class ThinnedEventsSampler:
 
-	def __init__(self, kern, events=None, dim = 2, measure=None, rate=10, bern_p = 0.5, n_iter = 10):
+	def __init__(self, kern, events=None, dim = 2, N_dim=20, measure=None, rate=10, bern_p = 0.5, n_iter = 10):
 
 		self.dim = dim
+		self.N_dim = N_dim
 		if events:
 			self.S = events
 		else:
-			self.gen_data2d()
+			self.gen_grid()
 		self.rate = rate
 		if not self.measure:
 			self.measure = measure
@@ -27,18 +29,13 @@ class ThinnedEventsSampler:
 		self.y_M = tfe.Variable(tf.zeros((0,1)), validate_shape=False)
 		
 
-	def gen_data2d(self):
+	def gen_grid(self, lower=0, upper=10):
 		D = self.dim
-		x = np.arange(-5,5.1,0.5)
-		y = np.arange(-5,5.1,0.5)
-		X, Y = np.meshgrid(x,y)
-		points=[x,y]
-		XY = np.array([X.flatten(), Y.flatten()]).T
-		kern = GPy.kern.RBF(input_dim = D, lengthscale=8, variance=1)
-		self.S = XY
-		self.gridN = [len(x), len(y)]
-		self.measure = (points[0][-1] - points[0][1]) * (points[1][-1] - points[1][1])
-		self.points = points
+		gridPoints = [np.arange(lower, upper, (1.0*upper -lower)/(self.N_dim*1.0)) for i in range(D)]
+		self.gridN = [len(gridPoints[i]) for i in range(D)]
+		self.S = np.array(list(itertools.product(*gridPoints)))
+		self.measure = D * (gridPoints[0][-1] - gridPoints[0][0])
+		self.gridPoints = gridPoints
 
 	def constructS_k(self):
 	
@@ -70,7 +67,7 @@ class ThinnedEventsSampler:
 		if dist == "Uniform":
 			while(True):
 				for i in range(len(self.gridN)):
-					vec[0][i] = self.points[i][np.random.choice(self.gridN[i], 1)]
+					vec[0][i] = self.gridPoints[i][np.random.choice(self.gridN[i], 1)]
 				if not (X == vec[0]).all(-1).any():
 					return tf.constant(vec, dtype=tf.float32)
 		elif dist == "Gaussian":
