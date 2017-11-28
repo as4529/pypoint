@@ -4,18 +4,7 @@ import tensorflow as tf
 basic likelihood class
 """
 
-class Likelihood:
-
-    def log_like(self, y, param):
-        pass
-
-    def grad(self, y, param):
-        pass
-
-    def hess(self, y, param):
-        pass
-
-class PoissonLike(Likelihood):
+class PoissonLike:
     """
     Implements Poisson likelihood
     """
@@ -30,4 +19,14 @@ class PoissonLike(Likelihood):
     def hess(self, y, log_rate):
 
         return -tf.exp(log_rate)
+
+class GaussianLike:
+
+    def __init__(self, variance):
+
+        self.variance = variance
+
+    def log_like(self, y, mean):
+
+        return -1/(2*self.variance)*tf.square(y-mean)
 
