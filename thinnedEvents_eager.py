@@ -1,25 +1,44 @@
 import numpy as np
+import GPy
 import tensorflow as tf
 from tensorflow.contrib.distributions import  Bernoulli
 import tensorflow.contrib.eager as tfe
 tfe.enable_eager_execution()
 class ThinnedEventsSampler:
 
-	def __init__(self, events, kern, measure, rate, bern_p = 0.5, n_iter = 10):
+	def __init__(self, kern, events=None, dim = 2, measure=None, rate=10, bern_p = 0.5, n_iter = 10):
 
-		self.S = events
-		self.kern = kern
-		self.measure = measure
+		self.dim = dim
+		if events:
+			self.S = events
+		else:
+			self.gen_data2d()
 		self.rate = rate
+		if not self.measure:
+			self.measure = measure
+		self.kern = kern
 		self.S_k, self.G_k = self.constructS_k()
 		self.bern_p = bern_p
 		self.bern = Bernoulli(probs = self.bern_p)
 		self.n_iter = n_iter
-		self.x_K = self.S_k.astype(np.float32)
-		self.y_K = self.G_k.astype(np.float32)
-		self.x_M = tfe.Variable(tf.zeros((0,1)), validate_shape=False)
+		self.x_K = tf.constant(self.S_k, dtype=tf.float32)
+		self.y_K = tf.constant(self.G_k, dtype=tf.float32)
+		self.x_M = tfe.Variable(tf.zeros((0,self.dim)), validate_shape=False)
 		self.y_M = tfe.Variable(tf.zeros((0,1)), validate_shape=False)
 		
+
+	def gen_data2d(self):
+		D = self.dim
+		x = np.arange(-5,5.1,0.5)
+		y = np.arange(-5,5.1,0.5)
+		X, Y = np.meshgrid(x,y)
+		points=[x,y]
+		XY = np.array([X.flatten(), Y.flatten()]).T
+		kern = GPy.kern.RBF(input_dim = D, lengthscale=8, variance=1)
+		self.S = XY
+		self.gridN = [len(x), len(y)]
+		self.measure = (points[0][-1] - points[0][1]) * (points[1][-1] - points[1][1])
+		self.points = points
 
 	def constructS_k(self):
 	
@@ -28,7 +47,7 @@ class ThinnedEventsSampler:
 		C = self.kern.K(self.S, self.S)
 		G = np.random.multivariate_normal(np.zeros((N)), C)
 		accept = np.where(R < (1 / (1 + np.exp(-G))))
-		S_k = np.take(self.S, accept, axis=0).reshape(-1, 1)
+		S_k = np.take(self.S, accept, axis=0).squeeze()
 		G_k = np.take(G, accept, axis=0).reshape(-1, 1)
 		return S_k, G_k
 
@@ -44,6 +63,22 @@ class ThinnedEventsSampler:
 		with tf.Session() as sess:
 			sess.run(tf.global_variables_initializer())
 			return sess.run([tf.concat([self.x_K, self.x_M], 0), tf.concat([self.y_K, self.y_M], 0)])
+
+	def sample_point(self, X, dist = "Uniform", mean = None):
+		vec = np.zeros((1, len(self.gridN)), dtype=np.float32)
+		X = np.array(X)
+		if dist == "Uniform":
+			while(True):
+				for i in range(len(self.gridN)):
+					vec[0][i] = self.points[i][np.random.choice(self.gridN[i], 1)]
+				if not (X == vec[0]).all(-1).any():
+					return tf.constant(vec, dtype=tf.float32)
+		elif dist == "Gaussian":
+			while(True):
+				vec = np.random.multivariate_normal(mean, np.sqrt(self.measure/10.0)*tf.eye(tf.shape(mean)[0]))
+				vec = np.expand_dims(self.S[np.argmin(np.linalg.norm(self.S - vec, axis=1))], axis=0)
+				if not (X == vec[0]).all(-1).any():
+					return tf.constant(vec, dtype=tf.float32)
 
 	def conditional(self, x_new, x, y, kernel):
 
@@ -63,14 +98,14 @@ class ThinnedEventsSampler:
 		
 	def erase_event(self, x_M, y_M, c):
 		
-		x_M = tf.concat([tf.slice(x_M, [0,0],[c,1]), tf.slice(x_M, [c+1,0], [-1,1])], 0)
+		x_M = tf.concat([tf.slice(x_M, [0,0],[c,self.dim]), tf.slice(x_M, [c+1,0], [-1,self.dim])], 0)
 		y_M = tf.concat([tf.slice(y_M, [0,0],[c,1]), tf.slice(y_M, [c+1,0], [-1,1])], 0)
 		return x_M, y_M
 
 	def insert_event(self, x_K, y_K, x_M, y_M):
 
 		M = tf.shape(x_M)[0]
-		x_new = tf.random_uniform((1,1), minval=0.0, maxval=self.measure)
+		x_new = self.sample_point(tf.concat([x_K, x_M], 0))#tf.random_uniform((1,1), minval=0.0, maxval=self.measure)
 		mu_new, sigma_new = self.conditional(x_new, tf.concat([x_K,x_M], 0), tf.concat([y_K, y_M], 0), self.kern)
 		y_new = tf.random_normal((1,1), mean=mu_new, stddev=tf.sqrt(sigma_new))
 		ratio = tf.log(float(self.rate * self.measure))
@@ -104,14 +139,14 @@ class ThinnedEventsSampler:
 
 	def sample_step(self, x_K, y_K, x_M, y_M, i):
 
-		x_new = tf.random_normal((1,1), mean=x_M[i], stddev=tf.sqrt(1.0 * self.measure/100.0))
+		x_new = self.sample_point(tf.concat([x_K, x_M], 0), mean=x_M[i], dist="Gaussian")
 		mu_new, sigma_new = self.conditional(x_new, tf.concat([x_K,x_M], 0), tf.concat([y_K, y_M], 0), self.kern)
 		y_new = tf.random_normal((1,1), mean=mu_new, stddev=tf.sqrt(sigma_new))
 		ratio = tf.log(1 + tf.exp(y_M[i]))
 		ratio -= tf.log(1 + tf.exp(y_new))
 		a = tf.random_uniform((1,))
 		accept = tf.squeeze(tf.less(tf.log(a), ratio))
-		x_M = tf.cond(accept, lambda: tf.concat([tf.slice(x_M, [0,0],[i,1]), tf.concat([x_new, tf.slice(x_M, [i+1,0], [-1,1])], 0)], 0), lambda: x_M)
+		x_M = tf.cond(accept, lambda: tf.concat([tf.slice(x_M, [0,0],[i,self.dim]), tf.concat([x_new, tf.slice(x_M, [i+1,0], [-1,self.dim])], 0)], 0), lambda: x_M)
 		y_M = tf.cond(accept, lambda: tf.concat([tf.slice(y_M, [0,0],[i,1]), tf.concat([y_new, tf.slice(y_M, [i+1,0], [-1,1])], 0)], 0), lambda: y_M)
 		i = tf.add(i, 1)
 		return x_K, y_K, x_M, y_M, i
