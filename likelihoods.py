@@ -4,6 +4,15 @@ import tensorflow as tf
 basic likelihood class
 """
 
+class BernoulliSigmoidLike:
+
+	"""
+	Implements Bernoulli sigmoid likelihood
+	"""
+	def log_like(self, y ,log_rate):
+
+		return tf.reduce_sum(tf.multiply(y, tf.log(1 + tf.exp(-log_rate))) + tf.multiply(1 - y, tf.log(1 + tf.exp(log_rate))))
+
 class PoissonLike:
     """
     Implements Poisson likelihood
