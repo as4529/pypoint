@@ -32,6 +32,8 @@ class KroneckerSolver:
             X (np.array): data
             y (np.array): output
             tau (float): Newton line search hyperparam
+            obs_idx (np.array): Indices of observed points if working with a partial grid
+            verbose (bool): verbose or not
         """
 
         self.verbose = verbose
@@ -105,9 +107,7 @@ class KroneckerSolver:
         Runs Kronecker inference. Updates instance variables.
 
         Args:
-            mu (tf.Variable): prior mean
             max_it (int): maximum number of iterations for Kronecker inference
-            f (tf.Variable): uninitialized function values
 
         Returns: max iterations, iteration number, objective
 
@@ -140,34 +140,38 @@ class KroneckerSolver:
         Args:
             max_it (int): maximum number of Kronecker iterations
             it (int): current iteration
-            prev (tf.Variable): previous objective value
             delta (tf.Variable): change in step size from previous iteration
 
         Returns: max iteration, current iteration, previous objective, change in objective
 
         """
 
+        print "constructing f"
         self.f = kron_mvp(self.Ks, self.alpha) + self.mu
         if self.k_diag is not None:
             self.f += tf.multiply(self.alpha, self.k_diag)
         psi = self.eval_obj(self.f, self.alpha)
 
+        print "getting derivs"
         if self.obs_idx is None:
             self.grads = self.grad_func(self.y, self.f)[0]
             hess = self.hess_func(self.y, self.f)[0]
             self.W = -hess
         else:
-            self.grads = self.gather_grads()
-            hess = self.gather_hess()
-            self.W = tfe.Variable(-hess, tf.float32)
+            self.grads, hess = self.gather_derivs()
+            self.hess = hess
+            self.W = tf.clip_by_value(tfe.Variable(-hess, tf.float32), 1e-9, 1e16)
 
+        """
         if self.obs_idx is not None:
             W = self.W.numpy()
             W[list(set(range(self.n)) - set(self.obs_idx))] = 0.
             self.W = tfe.Variable(W, tf.float32)
+        """
 
         b = tf.multiply(self.W, self.f - self.mu) + self.grads
 
+        print "solving linear system"
         if self.precondition is not None:
             z = self.step_opt.cg(tf.multiply(self.precondition,
                                              tf.multiply(1.0/tf.sqrt(self.W), b)))
@@ -214,6 +218,7 @@ class KroneckerSolver:
         Returns: optimal step size
 
         """
+        print "line search"
         obj_search = sys.float_info.max
         min_obj = obj_prev
         step_size = 2.0
@@ -289,10 +294,7 @@ class KroneckerSolver:
         """
         calculates marginal likelihood
         Args:
-            f (tf.Variable): function values
-            mu (tf.Variable): prior mean
-            self.W (tf.Variable): negative Hessian of likelihood
-
+            Ks_new: new covariance if needed
         Returns: tf.Variable for marginal likelihood
 
         """
@@ -331,6 +333,7 @@ class KroneckerSolver:
 
         if self.root_eigdecomp is None:
             self.root_eigdecomp = self.sqrt_eig()
+
         var = tf.zeros([self.n])
         id_norm = tf.contrib.distributions.MultivariateNormalDiag(tf.zeros([self.n]), tf.ones([self.n]))
 
@@ -363,6 +366,14 @@ class KroneckerSolver:
         return mean
 
     def cg_prod_step(self, p):
+        """
+
+        Args:
+            p (tfe.Variable): potential solution to linear system
+
+        Returns: product Ap (left side of linear system)
+
+        """
 
         if self.precondition is None:
             return p + tf.multiply(tf.sqrt(self.W), kron_mvp(self.Ks, tf.multiply(tf.sqrt(self.W), p)))
@@ -375,24 +386,28 @@ class KroneckerSolver:
 
         return noise + wkw + tf.multiply(self.precondition, Cp)
 
-    def gather_grads(self):
+    def gather_derivs(self):
+        """
+
+        Returns: sum of gradients if there are multiply hessians at single points
+
+        """
 
         obs_f = tf.gather(self.f, self.obs_idx)
-        obs_grad = self.grad_func(self.y, obs_f)[0].numpy()
+        print "grad"
+        obs_grad = self.grad_func(self.y, obs_f)[0]
+        print "hess"
+        obs_hess = self.hess_func(self.y, obs_f)[0]
 
-        agg_grad = np.zeros(self.n)
+        agg_grad = np.zeros(self.n, np.float32)
+        agg_hess = np.zeros(self.n, np.float32)
 
         for i, j in enumerate(self.obs_idx):
             agg_grad[j] += obs_grad[i]
+            agg_hess[j] += obs_hess[i]
 
-        agg_grad = tfe.Variable(agg_grad, tf.float32)
-        self.agg_grad = tf.cast(agg_grad, tf.float32)
+        return agg_grad, agg_hess
 
-        return self.agg_grad
-
-    def gather_hess(self):
-
-        return self.hess_func(tf.zeros_like(self.f), self.f)[0].numpy()
 
 class CGOptimizer:
 
@@ -415,7 +430,7 @@ class CGOptimizer:
         Returns: false if converged, true if not
 
         """
-        return tf.logical_and(tf.greater(tf.reduce_sum(tf.multiply(r, r)), 1e-9),
+        return tf.logical_and(tf.greater(tf.reduce_sum(tf.multiply(r, r)), 1e-5),
                                              tf.less(count, max_it))
 
     def cg_body(self, p, count, x, r, max_it):
@@ -442,7 +457,7 @@ class CGOptimizer:
         x += alpha * p
         r -= alpha * Bp
 
-        if tf.reduce_sum(tf.multiply(r, r)).numpy() < 1e-9:
+        if tf.reduce_sum(tf.multiply(r, r)).numpy() < 1e-5:
             return p, count, x, r, max_it
 
         norm_next = tf.reduce_sum(tf.multiply(r, r))
@@ -475,14 +490,13 @@ class CGOptimizer:
             r = b
         else:
             r = b - self.cg_prod(x)
+        self.prod = self.cg_prod(x)
 
         p = r
         fin = tf.while_loop(self.cg_converged, self.cg_body, [p, count, x,
                                                               r, max_it])
 
         return fin[2]
-
-
 
 class KernelLearner:
 
