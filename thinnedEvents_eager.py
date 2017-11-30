@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 import itertools
-from kern import RBF
+from kernels import RBF
 from tensorflow.contrib.distributions import Bernoulli
 import tensorflow.contrib.eager as tfe
 tfe.enable_eager_execution()
@@ -22,7 +22,7 @@ class ThinnedEventsSampler:
         if kern:
             self.kern = kern
         else:
-            self.kern = RBF(input_dim=self.dim, variance=1.0, lengthscale=5.0)
+            self.kern = RBF( variance=1.0, length_scale=5.0)
         if f_lambda:
             self.gen_from_lambda(f_lambda)
             self.S_k, self.G_k = self.constructS_k(sim_data=False)
@@ -84,7 +84,7 @@ class ThinnedEventsSampler:
 
         N = len(self.S)
         R = np.random.uniform(0, 1, N)
-        C = self.kern.K(self.S, self.S)
+        C = self.kern.eval(self.S, self.S)
         if not sim_data:
             accept = np.where(R < (self.Z.flatten() / self.rate))
         else:
@@ -162,9 +162,9 @@ class ThinnedEventsSampler:
 
         """
 
-        B = kernel.K(x, x_new)
-        A = kernel.K(x_new, x_new)
-        X = kernel.K(x, x)
+        B = kernel.eval(x, x_new)
+        A = kernel.eval(x_new, x_new)
+        X = kernel.eval(x, x)
         N = tf.shape(X)[0]
         mu = tf.matmul(B, tf.matmul(tf.matrix_inverse(X + 1e-6*tf.eye(N)), y), transpose_a=True)
         sigma = A - tf.matmul(B, tf.matmul(tf.matrix_inverse(X + 1e-6*tf.eye(N)), B), transpose_a=True)
@@ -353,7 +353,7 @@ def f(x):
 
 def run_thinnedEventsSolver(sim_data = False):
     
-    kern = RBF(input_dim=1, variance=1.0, lengthscale=5.0)
+    kern = RBF(variance=1.0, length_scale=5.0)
     if sim_data == False:
         sampler = ThinnedEventsSampler(f_lambda=f, kern=kern, measure=50, rate=2, dim=1, N_dim=100)
     else:
@@ -369,7 +369,7 @@ def run_thinnedEventsSolver(sim_data = False):
         y = np.concatenate((np.ones(K_i), np.zeros(M_i))) + 1e-4
         S_i = S_i.numpy()[ind]
         y = y[ind]
-        kron = KroneckerSolver(tf.ones([S_i.shape[0]], tf.float32)*np.log((np.mean(y) + 1e-3/(1 - np.mean(y) + 1e-3))), kernels.RBF(variance=1.0, length_scale=5.0) , BernoulliSigmoidLike(), S_i, tfe.Variable(y, dtype=tf.float32))
+        kron = KroneckerSolver(tf.ones([S_i.shape[0]], tf.float32)*np.log((np.mean(y) + 1e-3/(1 - np.mean(y) + 1e-3))), RBF(variance=1.0, length_scale=5.0) , BernoulliSigmoidLike(), S_i, tfe.Variable(y, dtype=tf.float32))
         kron.run(20)
         val = kron.f_pred
         val = val.numpy().reshape(-1,1)
