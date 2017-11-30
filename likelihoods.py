@@ -9,9 +9,9 @@ class BernoulliSigmoidLike:
 	"""
 	Implements Bernoulli sigmoid likelihood
 	"""
-	def log_like(self, y ,log_rate):
+	def log_like(self, y, g):
 
-		return tf.reduce_sum(tf.multiply(y, tf.log(1 + tf.exp(-log_rate))) + tf.multiply(1 - y, tf.log(1 + tf.exp(log_rate))))
+		return -tf.reduce_sum(tf.multiply(y, tf.log(1 + tf.exp(-g))) + tf.multiply(1 - y, tf.log(1 + tf.exp(g))))
 
 class PoissonLike:
     """

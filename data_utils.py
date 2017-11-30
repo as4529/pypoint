@@ -57,23 +57,11 @@ def poisson_draw(f, noise_val):
     return np.random.poisson(np.exp(f + noise_val* np.random.normal(0, 1, size=len(f))))
 
 
-def conjugate_grad(A, b, x=None):
-    n = len(b)
-    if not x:
-        x = np.ones(n)
-    r = np.dot(A, x) - b
-    p = - r
-    r_k_norm = np.dot(r, r)
-    for i in xrange(2*n):
-        Ap = np.dot(A, p)
-        alpha = r_k_norm / np.dot(p, Ap)
-        x += alpha * p
-        r += alpha * Ap
-        r_kplus1_norm = np.dot(r, r)
-        beta = r_kplus1_norm / r_k_norm
-        r_k_norm = r_kplus1_norm
-        if r_kplus1_norm < 1e-5:
-            print 'Itr:', i
-            break
-        p = beta * p - r
-    return x
+def rand_partial_grid(X, y, prop):
+
+    indices = np.sort(np.random.choice(X.shape[0], int(X.shape[0] * prop), replace=False))
+    X_partial = X[indices]
+    y_partial = y[indices]
+    X_partial = X_partial[np.lexsort((X_partial[:, 1], X_partial[:, 0]))]
+
+    return X_partial, y_partial
