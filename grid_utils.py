@@ -57,14 +57,14 @@ def fill_grid(X, y):
     X_grid = np.array(list(itertools.product(*x_dims)))
 
     d_indices = [{k: v for k, v in zip(x_dims[d], range(x_dims[d].shape[0]))} for d in range(D)]
-    grid_part = np.zeros([x_d.shape[0] for x_d in x_dims])
+    grid_part = np.ones([x_d.shape[0] for x_d in x_dims])*-1
 
     for i in range(X.shape[0]):
         idx = tuple([d_indices[d][X[i, d]] for d in range(D)])
         grid_part[idx] = 1
 
-    obs_idx = np.nonzero(grid_part.flatten())[0]
-    imag_idx = np.where(grid_part.flatten() == 0)[0]
+    obs_idx = np.where(grid_part.flatten() > -1)[0]
+    imag_idx = np.where(grid_part.flatten() == -1)[0]
 
     y_full = np.zeros(X_grid.shape[0])
     y_full[obs_idx] = y
