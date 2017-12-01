@@ -32,7 +32,8 @@ def find_nn(X, U, k):
 
     """
 
-    distance = tf.reduce_sum(tf.square(tf.subtract(U, tf.expand_dims(X, 1))), axis=2)
+    distance = tf.reduce_sum(tf.square(tf.subtract(U, tf.expand_dims(X, 1))),
+                             axis=2)
     top_k_vals, top_k_indices = tf.nn.top_k(tf.negative(distance), k=k)
 
     return top_k_vals, top_k_indices
@@ -57,7 +58,8 @@ def fill_grid(X, y):
 
     X_grid = np.array(list(itertools.product(*x_dims)))
 
-    d_indices = [{k: v for k, v in zip(x_dims[d], range(x_dims[d].shape[0]))} for d in range(D)]
+    d_indices = [{k: v for k, v in zip(x_dims[d], range(x_dims[d].shape[0]))}
+                 for d in range(D)]
     grid_part = np.ones([x_d.shape[0] for x_d in x_dims])*-1
 
     for i in range(X.shape[0]):
@@ -71,13 +73,3 @@ def fill_grid(X, y):
     y_full[obs_idx] = y
 
     return X_grid, y_full, obs_idx, imag_idx
-
-
-def get_partial_grid(X, y=None, prop=0.3):
-
-    D = X.shape[1]
-    x_dims = [np.unique(X[:, d]) for d in range(D)]
-
-    grid_part = np.zeros([x_d.shape[0] for x_d in x_dims])
-
-    return 0
