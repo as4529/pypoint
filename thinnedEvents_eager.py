@@ -26,7 +26,6 @@ class ThinnedEventsSampler:
             self.gen_from_lambda(f_lambda)
             self.S_k, self.G_k = self.constructS_k(sim_data=False)
         elif events is not None:
-            print("Running facebook data")
             self.S = events
             self.Z = self.rate*np.ones((len(events)))
             self.S_k, self.G_k = self.constructS_k(sim_data=False)
