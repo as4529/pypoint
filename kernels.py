@@ -1,5 +1,6 @@
 import tensorflow as tf
 
+
 class RBF:
 
     def __init__(self, variance, length_scale):
@@ -13,7 +14,7 @@ class RBF:
         self.length_scale = length_scale
         self.variance = variance
 
-    def eval(self, X, X2 = None):
+    def eval(self, X, X2=None):
 
         """
         Taken from Edward, without parts that break during eager excecution
@@ -25,14 +26,14 @@ class RBF:
 
         """
 
-        X = tf.convert_to_tensor(X, dtype = tf.float32)
+        X = tf.convert_to_tensor(X, dtype=tf.float32)
         X = X / self.length_scale
         Xs = tf.reduce_sum(tf.square(X), 1)
         if X2 is None:
             X2 = X
             X2s = Xs
         else:
-            X2 = tf.convert_to_tensor(X2, dtype = tf.float32)
+            X2 = tf.convert_to_tensor(X2, dtype=tf.float32)
             X2 = X2 / self.length_scale
             X2s = tf.reduce_sum(tf.square(X2), 1)
 
@@ -45,6 +46,7 @@ class RBF:
     def params(self):
 
         return [self.variance, self.length_scale]
+
 
 class Matern52:
     def __init__(self, rho, variance):
@@ -59,4 +61,3 @@ class Matern52:
 
         def eval(self, X, X2=None):
             return 0
-
