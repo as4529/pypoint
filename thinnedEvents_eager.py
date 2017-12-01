@@ -326,9 +326,11 @@ class ThinnedEventsSampler:
         ratio -= tf.log(1 + tf.exp(y_new))
         a = tf.random_uniform((1,))
         accept = tf.squeeze(tf.less(tf.log(a), ratio))
-        x_concat = tf.concat([x_new,
-                              tf.slice(x_M, [i+1, 0],
-                                       [-1, self.dim])], 0)
+        x_concat = tf.concat([tf.slice(x_M, [0, 0], [i, self.dim]),
+                              tf.concat([x_new,
+                                         tf.slice(x_M, [i+1, 0],
+                                                  [-1, self.dim])], 0)],
+                             0)
         x_M = tf.cond(accept, lambda: x_concat, lambda: x_M)
         y_concat = tf.concat([tf.slice(y_M, [0, 0], [i, 1]),
                               tf.concat([y_new,
@@ -378,23 +380,21 @@ class ThinnedEventsSampler:
         """
 
         i = tfe.Variable(0)
-        self.x_K, self.y_K,
-        self.x_M, self.y_M, i = tf.while_loop(self.thinned_cond,
-                                              self.thinned_step,
-                                              [self.x_K,
-                                               self.y_K,
-                                               self.x_M,
-                                               self.y_M,
-                                               i])
+        res = tf.while_loop(self.thinned_cond, self.thinned_step,
+                            [self.x_K, self.y_K, self.x_M,
+                             self.y_M, i])
+        self.x_K, self.y_K, \
+            self.x_M, self.y_M, i = res
 
         # Sample thinned locations
         it = tfe.Variable(0)
-        self.x_K, self.y_K, self.x_M,
-        self.y_M, it = tf.while_loop(self.sample_cond,
-                                     self.sample_step, [self.x_K,
-                                                        self.y_K,
-                                                        self.x_M,
-                                                        self.y_M, it])
+        self.x_K, self.y_K, self.x_M, \
+            self.y_M, it = tf.while_loop(self.sample_cond,
+                                         self.sample_step,
+                                         [self.x_K,
+                                          self.y_K,
+                                          self.x_M,
+                                          self.y_M, it])
         res = self.x_K, self.y_K, self.x_M, self.y_M
 
         return res
@@ -407,7 +407,6 @@ def f(x):
 def run_thinnedEventsSolver(events=None, sim_data=False):
 
     kern = RBF(variance=1.0, length_scale=5.0)
-    print(np.max(events))
     if events is not None:
         kern = RBF(variance=1.0, length_scale=30.0)
         sampler = ThinnedEventsSampler(events=events,
