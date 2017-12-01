@@ -1,8 +1,6 @@
 import GPy
 import numpy as np
 import itertools
-import tensorflow.contrib.eager as tfe
-tfe.enable_eager_execution()
 
 """
 basic utilities for simulating data
