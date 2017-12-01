@@ -1,13 +1,11 @@
+from kronecker import KroneckerSolver
+from likelihoods import BernoulliSigmoidLike
 import numpy as np
 import tensorflow as tf
-import itertools
 from kernels import RBF
 from tensorflow.contrib.distributions import Bernoulli
 import tensorflow.contrib.eager as tfe
 tfe.enable_eager_execution()
-from kronecker import KroneckerSolver
-import kernels
-from likelihoods import BernoulliSigmoidLike
 
 
 class ThinnedEventsSampler:
@@ -22,7 +20,7 @@ class ThinnedEventsSampler:
         if kern:
             self.kern = kern
         else:
-            self.kern = RBF( variance=1.0, length_scale=5.0)
+            self.kern = RBF(variance=1.0, length_scale=5.0)
         if f_lambda:
             self.gen_from_lambda(f_lambda)
             self.S_k, self.G_k = self.constructS_k(sim_data=False)
@@ -62,7 +60,6 @@ class ThinnedEventsSampler:
         """
         D = self.dim
         self.S = np.random.uniform(size=(self.N_dim, self.dim), low=lower, high=upper)
-#gridPoints = [np.arange(lower, upper, (1.0 * upper - lower)/(self.N_dim * 1.0)) for i in range(D)]
         self.measure = 1.0 * D * (upper - lower)
         self.gridPoints = self.S.reshape(self.dim, self.N_dim)
         self.gridN = [len(self.gridPoints[i]) for i in range(D)]
@@ -104,7 +101,7 @@ class ThinnedEventsSampler:
             y_M (np.array) : Functions values at thinned locations
 
         """
-            
+
         self.x_K = x_K
         self.x_M = tfe.Variable(x_M, validate_shape=False)
         self.y_K = y_K
@@ -116,7 +113,7 @@ class ThinnedEventsSampler:
             sess.run(tf.global_variables_initializer())
             return sess.run([tf.concat([self.x_K, self.x_M], 0), tf.concat([self.y_K, self.y_M], 0)])
 
-    def sample_point(self, x_K, dist = "Uniform", mean = None):
+    def sample_point(self, x_K, dist="Uniform", mean=None):
 
         """Sample new point from region.
 
@@ -132,16 +129,16 @@ class ThinnedEventsSampler:
         vec = np.zeros((1, self.dim), dtype=np.float32)
         x_K = np.array(x_K)
         if dist == "Uniform":
-            if self.type=="C":
-                return tf.random_uniform((1,self.dim), minval=0.0, maxval=self.measure)
+            if self.type == "C":
+                return tf.random_uniform((1, self.dim), minval=0.0, maxval=self.measure)
             while(True):
                 for i in range(len(self.gridN)):
                     vec[0][i] = self.gridPoints[i][np.random.choice(self.gridN[i], 1)]
                 if np.min((x_K - vec[0])**2) > 1e-3:
                     return tf.convert_to_tensor(vec, dtype=tf.float32)
         elif dist == "Gaussian":
-            if self.type=="C":
-                return tf.random_normal((1,self.dim), mean=mean, stddev=np.sqrt(self.measure/100.0)*tf.eye(tf.shape(mean)[0]))
+            if self.type == "C":
+                return tf.random_normal((1, self.dim), mean=mean, stddev=np.sqrt(self.measure/100.0)*tf.eye(tf.shape(mean)[0]))
             while(True):
                 vec = np.random.multivariate_normal(mean, np.sqrt(self.measure/10.0)*tf.eye(tf.shape(mean)[0]))
                 vec = np.expand_dims(self.S[np.argmin(np.linalg.norm(self.S - vec, axis=1))], axis=0)
@@ -179,7 +176,7 @@ class ThinnedEventsSampler:
         y_new (tf.constant) : Function value at x_new
         x_M (tf.Variable) : Locations of thinned events
         y_M (tf.Variable) : Values at thinned events
-        
+
         Returns:
             Updated locations and functions values of thinned events
 
@@ -217,10 +214,10 @@ class ThinnedEventsSampler:
             x_M (np.array) : Locations of thinned events
             y_K (np.array) : Functions values at observed locations
             y_M (np.array) : Functions values at thinned locations
-        
+
         Returns:
             Updated locations and functions values of thinned events
-            
+
         """
 
         M = tf.shape(x_M)[0]
@@ -244,10 +241,10 @@ class ThinnedEventsSampler:
             x_M (np.array) : Locations of thinned events
             y_K (np.array) : Functions values at observed locations
             y_M (np.array) : Functions values at thinned locations
-        
+
         Returns:
             Updated locations and functions values of thinned events
-            
+
         """
 
         M = tf.shape(x_M)[0]
@@ -288,7 +285,7 @@ class ThinnedEventsSampler:
             Updated locations and function values of thinned events
 
         """
-            
+
         x_new = self.sample_point(tf.concat([x_K, x_M], 0), mean=x_M[i], dist="Gaussian")
 # x_new = tf.random_normal((1,1), mean=x_M[i], stddev=np.sqrt(self.measure/100.0))#self.sample_point(tf.concat([x_K, x_M], 0), mean=x_M[i], dist="Gaussian")
         mu_new, sigma_new = self.conditional(x_new, tf.concat([x_K, x_M], 0), tf.concat([y_K, y_M], 0), self.kern)
@@ -330,7 +327,7 @@ class ThinnedEventsSampler:
         return tf.less(it, n_iter)
 
     def run(self):
-    
+
         """Samples the number of thinned locations and its locations
 
         Returns:
@@ -348,17 +345,19 @@ class ThinnedEventsSampler:
 
         return res
 
+
 def f(x):
     return 2*np.exp(-x/15) + np.exp(-((x-25)/10.0)**2)
 
-def run_thinnedEventsSolver(sim_data = False):
-    
+
+def run_thinnedEventsSolver(sim_data=False):
+
     kern = RBF(variance=1.0, length_scale=5.0)
-    if sim_data == False:
+    if sim_data is False:
         sampler = ThinnedEventsSampler(f_lambda=f, kern=kern, measure=50, rate=2, dim=1, N_dim=100)
     else:
         sampler = ThinnedEventsSampler(kern=kern, dim=1, N_dim=100)
-        
+
     n_iter = 30
     for i in range(n_iter):
         x_K, y_K, x_M, y_M = sampler.run()
@@ -369,10 +368,10 @@ def run_thinnedEventsSolver(sim_data = False):
         y = np.concatenate((np.ones(K_i), np.zeros(M_i))) + 1e-4
         S_i = S_i.numpy()[ind]
         y = y[ind]
-        kron = KroneckerSolver(tf.ones([S_i.shape[0]], tf.float32)*np.log((np.mean(y) + 1e-3/(1 - np.mean(y) + 1e-3))), RBF(variance=1.0, length_scale=5.0) , BernoulliSigmoidLike(), S_i, tfe.Variable(y, dtype=tf.float32))
+        kron = KroneckerSolver(tf.ones([S_i.shape[0]], tf.float32)*np.log((np.mean(y) + 1e-3/(1 - np.mean(y) + 1e-3))), RBF(variance=1.0, length_scale=5.0), BernoulliSigmoidLike(), S_i, tfe.Variable(y, dtype=tf.float32))
         kron.run(20)
         val = kron.f_pred
-        val = val.numpy().reshape(-1,1)
-        sampler.update(x_K, x_M, val[y>1.0], val[y<1.0])
-        
+        val = val.numpy().reshape(-1, 1)
+        sampler.update(x_K, x_M, val[y > 1.0], val[y < 1.0])
+
     return sampler, S_i, val
