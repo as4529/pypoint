@@ -11,7 +11,7 @@ import tensorflow.contrib.eager as tfe
 class ThinnedEventsSampler:
 
     def __init__(self, kern=None, events=None, f_lambda=None, dim=2, N_dim=20,
-            measure=None, rate=10, bern_p=0.5, n_iter=10):
+                 measure=None, rate=10, bern_p=0.5, n_iter=10):
 
         self.dim = dim
         self.N_dim = N_dim
@@ -49,7 +49,8 @@ class ThinnedEventsSampler:
 
         """
         N = np.random.poisson(self.measure*self.rate)
-        self.S = np.expand_dims(np.sort(np.linspace(0, self.measure, N)), axis=1)
+        self.S = np.expand_dims(np.sort(np.linspace(0,
+                                self.measure, N)), axis=1)
         self.Z = f_lambda(self.S)
         self.gridPoints = self.S.reshape(1, -1)
         self.dim = 1
@@ -64,7 +65,8 @@ class ThinnedEventsSampler:
 
         """
         D = self.dim
-        self.S = np.random.uniform(size=(self.N_dim, self.dim), low=lower, high=upper)
+        self.S = np.random.uniform(size=(self.N_dim, self.dim),
+                                   low=lower, high=upper)
         self.measure = 1.0 * D * (upper - lower)
         self.gridPoints = self.S.reshape(self.dim, self.N_dim)
         self.gridN = [len(self.gridPoints[i]) for i in range(D)]
@@ -115,7 +117,8 @@ class ThinnedEventsSampler:
 
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
-            return sess.run([tf.concat([self.x_K, self.x_M], 0), tf.concat([self.y_K, self.y_M], 0)])
+            return sess.run([tf.concat([self.x_K, self.x_M], 0),
+                            tf.concat([self.y_K, self.y_M], 0)])
 
     def sample_point(self, x_K, dist="Uniform", mean=None):
 
@@ -134,18 +137,26 @@ class ThinnedEventsSampler:
         x_K = np.array(x_K)
         if dist == "Uniform":
             if self.type == "C":
-                return tf.random_uniform((1, self.dim), minval=0.0, maxval=self.measure)
+                return tf.random_uniform((1, self.dim),
+                                         minval=0.0, maxval=self.measure)
             while(True):
                 for i in range(len(self.gridN)):
-                    vec[0][i] = self.gridPoints[i][np.random.choice(self.gridN[i], 1)]
+                    choice = np.random.choice(self.gridN[i], 1)
+                    vec[0][i] = self.gridPoints[i][choice]
                 if np.min((x_K - vec[0])**2) > 1e-3:
                     return tf.convert_to_tensor(vec, dtype=tf.float32)
         elif dist == "Gaussian":
             if self.type == "C":
-                return tf.random_normal((1, self.dim), mean=mean, stddev=np.sqrt(self.measure/100.0)*tf.eye(tf.shape(mean)[0]))
+                return tf.random_normal((1, self.dim), mean=mean,
+                                        stddev=np.sqrt(self.measure/100.0) *
+                                        tf.eye(tf.shape(mean)[0]))
             while(True):
-                vec = np.random.multivariate_normal(mean, np.sqrt(self.measure/10.0)*tf.eye(tf.shape(mean)[0]))
-                vec = np.expand_dims(self.S[np.argmin(np.linalg.norm(self.S - vec, axis=1))], axis=0)
+                N_shape = tf.shape(mean)[0]
+                vec = np.random.multivariate_normal(mean,
+                                                    np.sqrt(self.measure/10.0)
+                                                    * tf.eye(N_shape))
+                vec = np.expand_dims(self.S[np.argmin(np.linalg.norm(self.S -
+                                                      vec, axis=1))], axis=0)
                 if np.min((x_K - vec[0])**2) > 1e-3:
                     return tf.convert_to_tensor(vec, dtype=tf.float32)
 
@@ -167,8 +178,11 @@ class ThinnedEventsSampler:
         A = kernel.eval(x_new, x_new)
         X = kernel.eval(x, x)
         N = tf.shape(X)[0]
-        mu = tf.matmul(B, tf.matmul(tf.matrix_inverse(X + 1e-6*tf.eye(N)), y), transpose_a=True)
-        sigma = A - tf.matmul(B, tf.matmul(tf.matrix_inverse(X + 1e-6*tf.eye(N)), B), transpose_a=True)
+        mu = tf.matmul(B, tf.matmul(tf.matrix_inverse(X +
+                       1e-6*tf.eye(N)), y),
+                       transpose_a=True)
+        sigma = A - tf.matmul(B, tf.matmul(tf.matrix_inverse(X +
+                              1e-6*tf.eye(N)), B), transpose_a=True)
         return tf.squeeze(mu), tf.squeeze(sigma)
 
     def add_event(self, x_new, y_new, x_M, y_M):
@@ -204,8 +218,10 @@ class ThinnedEventsSampler:
 
         """
 
-        x_M = tf.concat([tf.slice(x_M, [0, 0], [c, self.dim]), tf.slice(x_M, [c+1, 0], [-1, self.dim])], 0)
-        y_M = tf.concat([tf.slice(y_M, [0, 0], [c, 1]), tf.slice(y_M, [c+1, 0], [-1, 1])], 0)
+        x_M = tf.concat([tf.slice(x_M, [0, 0], [c, self.dim]),
+                        tf.slice(x_M, [c+1, 0], [-1, self.dim])], 0)
+        y_M = tf.concat([tf.slice(y_M, [0, 0], [c, 1]),
+                        tf.slice(y_M, [c+1, 0], [-1, 1])], 0)
         return x_M, y_M
 
     def insert_event(self, x_K, y_K, x_M, y_M):
@@ -225,14 +241,19 @@ class ThinnedEventsSampler:
         """
 
         M = tf.shape(x_M)[0]
-        x_new = self.sample_point(tf.concat([x_K, x_M], 0))  # tf.random_uniform((1,1), minval=0.0, maxval=self.measure)
-        mu_new, sigma_new = self.conditional(x_new, tf.concat([x_K, x_M], 0), tf.concat([y_K, y_M], 0), self.kern)
-        y_new = tf.random_normal((1, 1), mean=mu_new, stddev=tf.sqrt(sigma_new))
+        x_new = self.sample_point(tf.concat([x_K, x_M], 0))
+        mu_new, sigma_new = self.conditional(x_new, tf.concat([x_K, x_M], 0),
+                                             tf.concat([y_K, y_M], 0),
+                                             self.kern)
+        y_new = tf.random_normal((1, 1), mean=mu_new,
+                                 stddev=tf.sqrt(sigma_new))
         ratio = tf.log(float(self.rate * self.measure))
         ratio -= tf.log(tf.cast(M+1, tf.float32))
         ratio -= tf.log(1+tf.exp(y_new))
         a = tf.random_uniform((1,))
-        x_M, y_M = tf.cond(tf.squeeze(tf.less(tf.log(a), ratio)), lambda: self.add_event(x_new, y_new, x_M, y_M), lambda: (x_M, y_M))
+        x_M, y_M = tf.cond(tf.squeeze(tf.less(tf.log(a), ratio)),
+                           lambda: self.add_event(x_new, y_new, x_M, y_M),
+                           lambda: (x_M, y_M))
         return x_M, y_M
 
     def delete_util(self, x_M, y_M):
@@ -258,14 +279,18 @@ class ThinnedEventsSampler:
         ratio += tf.log(1 + tf.exp(tf.slice(y_M, [c, 0], [1, 1])))
         ratio -= tf.log(float(self.rate * self.measure))
         a = tf.random_uniform((1,))
-        x_M, y_M = tf.cond(tf.squeeze(tf.less(tf.log(a), ratio)), lambda: self.erase_event(x_M, y_M, c), lambda: (x_M, y_M))
+        x_M, y_M = tf.cond(tf.squeeze(tf.less(tf.log(a), ratio)),
+                           lambda: self.erase_event(x_M, y_M, c),
+                           lambda: (x_M, y_M))
         return x_M, y_M
 
     def delete_event(self, x_K, y_K, x_M, y_M):
 
         """Utility function for delete step"""
         M = tf.shape(x_M)[0]
-        x_M, y_M = tf.cond(tf.equal(M, tf.constant(0)), lambda: (x_M, y_M), lambda: self.delete_util(x_M, y_M))
+        x_M, y_M = tf.cond(tf.equal(M, tf.constant(0)),
+                           lambda: (x_M, y_M),
+                           lambda: self.delete_util(x_M, y_M))
         return x_M, y_M
 
     def sample_cond(self, x_K, y_K, x_M, y_M, i):
@@ -290,16 +315,27 @@ class ThinnedEventsSampler:
 
         """
 
-        x_new = self.sample_point(tf.concat([x_K, x_M], 0), mean=x_M[i], dist="Gaussian")
-# x_new = tf.random_normal((1,1), mean=x_M[i], stddev=np.sqrt(self.measure/100.0))#self.sample_point(tf.concat([x_K, x_M], 0), mean=x_M[i], dist="Gaussian")
-        mu_new, sigma_new = self.conditional(x_new, tf.concat([x_K, x_M], 0), tf.concat([y_K, y_M], 0), self.kern)
-        y_new = tf.random_normal((1, 1), mean=mu_new, stddev=tf.sqrt(sigma_new))
+        x_new = self.sample_point(tf.concat([x_K, x_M], 0),
+                                  mean=x_M[i], dist="Gaussian")
+        mu_new, sigma_new = self.conditional(x_new, tf.concat([x_K, x_M], 0),
+                                             tf.concat([y_K, y_M], 0),
+                                             self.kern)
+        y_new = tf.random_normal((1, 1), mean=mu_new,
+                                 stddev=tf.sqrt(sigma_new))
         ratio = tf.log(1 + tf.exp(y_M[i]))
         ratio -= tf.log(1 + tf.exp(y_new))
         a = tf.random_uniform((1,))
         accept = tf.squeeze(tf.less(tf.log(a), ratio))
-        x_M = tf.cond(accept, lambda: tf.concat([tf.slice(x_M, [0, 0], [i, self.dim]), tf.concat([x_new, tf.slice(x_M, [i+1, 0], [-1, self.dim])], 0)], 0), lambda: x_M)
-        y_M = tf.cond(accept, lambda: tf.concat([tf.slice(y_M, [0, 0], [i, 1]), tf.concat([y_new, tf.slice(y_M, [i+1, 0], [-1, 1])], 0)], 0), lambda: y_M)
+        x_concat = tf.concat([x_new,
+                              tf.slice(x_M, [i+1, 0],
+                                       [-1, self.dim])], 0)
+        x_M = tf.cond(accept, lambda: x_concat, lambda: x_M)
+        y_concat = tf.concat([tf.slice(y_M, [0, 0], [i, 1]),
+                              tf.concat([y_new,
+                                         tf.slice(y_M, [i+1, 0],
+                                                  [-1, 1])], 0)],
+                             0)
+        y_M = tf.cond(accept, lambda: y_concat, lambda: y_M)
         i = tf.add(i, 1)
         return x_K, y_K, x_M, y_M, i
 
@@ -322,7 +358,9 @@ class ThinnedEventsSampler:
             Updated locations and function values of thinned events
 
         """
-        x_M, y_M = tf.cond(tf.equal(self.bern.sample(), 1), lambda: self.insert_event(x_K, y_K, x_M, y_M), lambda: self.delete_event(x_K, y_K, x_M, y_M))
+        x_M, y_M = tf.cond(tf.equal(self.bern.sample(), 1),
+                           lambda: self.insert_event(x_K, y_K, x_M, y_M),
+                           lambda: self.delete_event(x_K, y_K, x_M, y_M))
         i = tf.add(i, 1)
         return x_K, y_K, x_M, y_M, i
 
@@ -340,11 +378,23 @@ class ThinnedEventsSampler:
         """
 
         i = tfe.Variable(0)
-        self.x_K, self.y_K, self.x_M, self.y_M, i = tf.while_loop(self.thinned_cond, self.thinned_step, [self.x_K, self.y_K, self.x_M, self.y_M, i])
+        self.x_K, self.y_K,
+        self.x_M, self.y_M, i = tf.while_loop(self.thinned_cond,
+                                              self.thinned_step,
+                                              [self.x_K,
+                                               self.y_K,
+                                               self.x_M,
+                                               self.y_M,
+                                               i])
 
         # Sample thinned locations
         it = tfe.Variable(0)
-        self.x_K, self.y_K, self.x_M, self.y_M, it = tf.while_loop(self.sample_cond, self.sample_step, [self.x_K, self.y_K, self.x_M, self.y_M, it])
+        self.x_K, self.y_K, self.x_M,
+        self.y_M, it = tf.while_loop(self.sample_cond,
+                                     self.sample_step, [self.x_K,
+                                                        self.y_K,
+                                                        self.x_M,
+                                                        self.y_M, it])
         res = self.x_K, self.y_K, self.x_M, self.y_M
 
         return res
@@ -360,10 +410,15 @@ def run_thinnedEventsSolver(events=None, sim_data=False):
     print(np.max(events))
     if events is not None:
         kern = RBF(variance=1.0, length_scale=30.0)
-        sampler = ThinnedEventsSampler(events=events, kern=kern, measure=np.max(events), rate=5.0, dim=1)
+        sampler = ThinnedEventsSampler(events=events,
+                                       kern=kern,
+                                       measure=np.max(events),
+                                       rate=5.0, dim=1)
 
     elif sim_data is False:
-        sampler = ThinnedEventsSampler(f_lambda=f, kern=kern, measure=50, rate=2, dim=1, N_dim=100)
+        sampler = ThinnedEventsSampler(f_lambda=f, kern=kern,
+                                       measure=50, rate=2,
+                                       dim=1, N_dim=100)
     else:
         sampler = ThinnedEventsSampler(kern=kern, dim=1, N_dim=100)
 
@@ -377,7 +432,12 @@ def run_thinnedEventsSolver(events=None, sim_data=False):
         y = np.concatenate((np.ones(K_i), np.zeros(M_i))) + 1e-4
         S_i = S_i.numpy()[ind]
         y = y[ind]
-        kron = KroneckerSolver(tf.ones([S_i.shape[0]], tf.float32)*np.log((np.mean(y) + 1e-3/(1 - np.mean(y) + 1e-3))), kern, BernoulliSigmoidLike(), S_i, tfe.Variable(y, dtype=tf.float32))
+        kron = KroneckerSolver(tf.ones([S_i.shape[0]],
+                               tf.float32)*np.log(
+                               (np.mean(y) + 1e-3/(1 - np.mean(y) + 1e-3))),
+                               kern,
+                               BernoulliSigmoidLike(), S_i,
+                               tfe.Variable(y, dtype=tf.float32))
         kron.run(20)
         val = kron.f_pred
         val = val.numpy().reshape(-1, 1)
