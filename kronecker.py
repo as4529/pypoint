@@ -1,10 +1,9 @@
+from copy import deepcopy
 import tensorflow as tf
 import numpy as np
 import sys
 import tensorflow.contrib.eager as tfe
 tfe.enable_eager_execution()
-from copy import deepcopy
-from operator import mul
 
 """
 Class for Kronecker inference of GPs. Inspiration from GPML.
@@ -23,7 +22,7 @@ Most of the notation follows R and W chapter 2, and Flaxman and Wilson
 
 class KroneckerSolver:
 
-    def __init__(self, mu, kernel, likelihood, X, y, tau=0.5, obs_idx=None, verbose = False):
+    def __init__(self, mu, kernel, likelihood, X, y, tau=0.5, obs_idx=None, verbose=False):
         """
 
         Args:
@@ -169,10 +168,10 @@ class KroneckerSolver:
         step_size = self.line_search(delta_alpha, psi, 20)
 
         if self.verbose:
-            print "Iteration: ", it
-            print " psi: ", psi
-            print "step", step_size
-            print ""
+            print("Iteration: ", it)
+            print(" psi: ", psi)
+            print("step", step_size)
+            print("")
 
         delta = step_size
 
@@ -255,7 +254,7 @@ class KroneckerSolver:
 
         return tf.logical_and(tf.less(t, max_it), tf.less(obj_prev - obj_search, step_size * t))
 
-    def eval_obj(self, f = None, alpha = None):
+    def eval_obj(self, f=None, alpha=None):
 
         """
         Evaluates objective function (negative log likelihood plus GP penalty)
@@ -276,7 +275,7 @@ class KroneckerSolver:
         return -tf.reduce_sum(self.likelihood.log_like(self.y, f)) + 0.5 * tf.reduce_sum(
             tf.multiply(alpha, f - self.mu))
 
-    def marginal(self, Ks_new = None):
+    def marginal(self, Ks_new=None):
         """
         calculates marginal likelihood
         Args:
@@ -285,7 +284,7 @@ class KroneckerSolver:
 
         """
 
-        if Ks_new == None:
+        if Ks_new is not None:
             Ks = self.Ks
         else:
             Ks = Ks_new
@@ -307,7 +306,7 @@ class KroneckerSolver:
 
             pen = -0.5 * tf.reduce_sum(tf.multiply(alpha_lim, f_lim - mu_lim))
             pen = tf.where(tf.is_nan(pen), tf.zeros_like(pen), pen)
-            eigs =  0.5 * tf.reduce_sum(tf.log(1 + tf.multiply(eig_k_lim, W_lim)))
+            eigs = 0.5 * tf.reduce_sum(tf.log(1 + tf.multiply(eig_k_lim, W_lim)))
             eigs = tf.where(tf.is_nan(eigs), tf.zeros_like(eigs), eigs)
             like = tf.reduce_sum(self.likelihood.log_like(self.y, f_lim))
             like = tf.where(tf.is_nan(like), tf.zeros_like(like), like)
@@ -345,7 +344,7 @@ class KroneckerSolver:
             if self.precondition is None:
                 right_side = tf.squeeze(tf.matmul(WK, tf.expand_dims(g_m, 1))) + tf.squeeze(g_n)
             else:
-                cov_term =  tf.squeeze(tf.matmul(WK, tf.expand_dims(g_m, 1)))
+                cov_term = tf.squeeze(tf.matmul(WK, tf.expand_dims(g_m, 1)))
                 noise_term = tf.multiply(W_kd, g_n)
                 right_side = tf.multiply(self.precondition, cov_term + noise_term)
 
@@ -353,7 +352,7 @@ class KroneckerSolver:
             r = self.opt.cg(right_side)
             var += tf.square(tf.squeeze(kron_mvp(self.Ks, tf.multiply(tf.sqrt(self.W), r))))
 
-        return tf.nn.relu(tf.squeeze(self.kernel.eval([[0.]],[[0.]])) - var/n_s*1.0)
+        return tf.nn.relu(tf.squeeze(self.kernel.eval([[0.]], [[0.]])) - var/n_s*1.0)
 
     def predict_mean(self, x_new):
 
@@ -405,9 +404,10 @@ class KroneckerSolver:
 
         return agg_grad, agg_hess
 
+
 class CGOptimizer:
 
-    def __init__(self, cg_prod = None, tol = 1e-3):
+    def __init__(self, cg_prod=None, tol=1e-3):
 
         self.cg_prod = cg_prod
         self.tol = tol
@@ -463,7 +463,7 @@ class CGOptimizer:
 
         return p, count, x, r, max_it
 
-    def cg(self, b, x=None, z=None, max_it = None):
+    def cg(self, b, x=None, z=None, max_it=None):
         """
         solves linear system Ax = b
         Args:
@@ -494,10 +494,11 @@ class CGOptimizer:
 
         return fin[2]
 
+
 class KernelLearner:
 
     def __init__(self, mu, kernel, likelihood, X, y, tau,
-                 k_diag = None, mask = None, eps = np.array([1e-5, 1])):
+                 k_diag=None, mask=None, eps=np.array([1e-5, 1])):
 
         self.kernel = kernel
         self.mu = mu
@@ -510,14 +511,6 @@ class KernelLearner:
         self.eps = eps
 
     def optimize_marginal(self, init_params):
-
-        return 0
-
-    def gradient_step(self, params):
-
-        for i in range(len(params)):
-
-            fin_diff = self.finite_difference(self.eps[i], params, i)
 
         return 0
 
@@ -569,6 +562,7 @@ def kron(A, B):
         out = tf.concat([out, row], 0)
 
     return out
+
 
 def kron_list(matrices):
     """
