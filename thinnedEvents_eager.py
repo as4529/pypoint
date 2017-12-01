@@ -5,24 +5,30 @@ import tensorflow as tf
 from kernels import RBF
 from tensorflow.contrib.distributions import Bernoulli
 import tensorflow.contrib.eager as tfe
-tfe.enable_eager_execution()
+# tfe.enable_eager_execution()
 
 
 class ThinnedEventsSampler:
 
-    def __init__(self, kern=None, f_lambda=None, dim=2, N_dim=20,
+    def __init__(self, kern=None, events=None, f_lambda=None, dim=2, N_dim=20,
             measure=None, rate=10, bern_p=0.5, n_iter=10):
 
         self.dim = dim
         self.N_dim = N_dim
         self.measure = measure
         self.rate = rate
+        self.type = "C"
         if kern:
             self.kern = kern
         else:
             self.kern = RBF(variance=1.0, length_scale=5.0)
         if f_lambda:
             self.gen_from_lambda(f_lambda)
+            self.S_k, self.G_k = self.constructS_k(sim_data=False)
+        elif events is not None:
+            print("Running facebook data")
+            self.S = events
+            self.Z = self.rate*np.ones((len(events)))
             self.S_k, self.G_k = self.constructS_k(sim_data=False)
         else:
             self.gen_grid()
@@ -48,7 +54,6 @@ class ThinnedEventsSampler:
         self.gridPoints = self.S.reshape(1, -1)
         self.dim = 1
         self.gridN = [len(self.gridPoints[0])]
-        self.type = "C"
 
     def gen_grid(self, lower=0, upper=20):
         """Generate a complete grid.
@@ -63,7 +68,6 @@ class ThinnedEventsSampler:
         self.measure = 1.0 * D * (upper - lower)
         self.gridPoints = self.S.reshape(self.dim, self.N_dim)
         self.gridN = [len(self.gridPoints[i]) for i in range(D)]
-        self.type = "C"
 
     def constructS_k(self, sim_data):
         """Construct set of observed events.
@@ -350,16 +354,22 @@ def f(x):
     return 2*np.exp(-x/15) + np.exp(-((x-25)/10.0)**2)
 
 
-def run_thinnedEventsSolver(sim_data=False):
+def run_thinnedEventsSolver(events=None, sim_data=False):
 
     kern = RBF(variance=1.0, length_scale=5.0)
-    if sim_data is False:
+    print(np.max(events))
+    if events is not None:
+        kern = RBF(variance=1.0, length_scale=30.0)
+        sampler = ThinnedEventsSampler(events=events, kern=kern, measure=np.max(events), rate=5.0, dim=1)
+
+    elif sim_data is False:
         sampler = ThinnedEventsSampler(f_lambda=f, kern=kern, measure=50, rate=2, dim=1, N_dim=100)
     else:
         sampler = ThinnedEventsSampler(kern=kern, dim=1, N_dim=100)
 
     n_iter = 30
     for i in range(n_iter):
+        print(i)
         x_K, y_K, x_M, y_M = sampler.run()
         K_i = len(x_K.numpy())
         M_i = len(x_M.numpy())
@@ -368,7 +378,7 @@ def run_thinnedEventsSolver(sim_data=False):
         y = np.concatenate((np.ones(K_i), np.zeros(M_i))) + 1e-4
         S_i = S_i.numpy()[ind]
         y = y[ind]
-        kron = KroneckerSolver(tf.ones([S_i.shape[0]], tf.float32)*np.log((np.mean(y) + 1e-3/(1 - np.mean(y) + 1e-3))), RBF(variance=1.0, length_scale=5.0), BernoulliSigmoidLike(), S_i, tfe.Variable(y, dtype=tf.float32))
+        kron = KroneckerSolver(tf.ones([S_i.shape[0]], tf.float32)*np.log((np.mean(y) + 1e-3/(1 - np.mean(y) + 1e-3))), kern, BernoulliSigmoidLike(), S_i, tfe.Variable(y, dtype=tf.float32))
         kron.run(20)
         val = kron.f_pred
         val = val.numpy().reshape(-1, 1)
