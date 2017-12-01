@@ -3,8 +3,6 @@ from tensorflow.contrib.distributions import MultivariateNormalDiag
 import tensorflow as tf
 import numpy as np
 import sys
-import tensorflow.contrib.eager as tfe
-tfe.enable_eager_execution()
 
 """
 Class for Kronecker inference of GPs. Inspiration from GPML.
