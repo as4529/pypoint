@@ -26,6 +26,7 @@ We also work on implementing efficient modifications of the algorithm from Adams
 
 - kronecker.py: primary file for implementation of Kronecker methods
 - data_utils.py, grid_utils.py, likelihoods.py: helpers for the kronecker methods
+- thinnedEvents_eager.py : File for implementation of Poisson process inference using thinned events
 - Final Presentation: Our final presentation
 
 # What's next
