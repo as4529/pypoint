@@ -369,7 +369,6 @@ def run_thinnedEventsSolver(events=None, sim_data=False):
 
     n_iter = 30
     for i in range(n_iter):
-        print(i)
         x_K, y_K, x_M, y_M = sampler.run()
         K_i = len(x_K.numpy())
         M_i = len(x_M.numpy())
