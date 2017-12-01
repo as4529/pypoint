@@ -1,6 +1,5 @@
 import tensorflow as tf
 
-
 class RBF:
 
     def __init__(self, variance, length_scale):
@@ -37,8 +36,7 @@ class RBF:
             X2 = X2 / self.length_scale
             X2s = tf.reduce_sum(tf.square(X2), 1)
 
-        square = tf.reshape(Xs, [-1, 1]) + tf.reshape(X2s, [1, -1]) - \
-                 2 * tf.matmul(X, X2, transpose_b=True)
+        square = tf.reshape(Xs, [-1, 1]) + tf.reshape(X2s, [1, -1]) - 2 * tf.matmul(X, X2, transpose_b=True)
         output = self.variance * tf.exp(-square / 2)
 
         return output
