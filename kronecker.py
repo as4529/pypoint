@@ -1,5 +1,5 @@
 from copy import deepcopy
-from tf.contrib.distributions import MultivariateNormalDiag
+from tensorflow.contrib.distributions import MultivariateNormalDiag
 import tensorflow as tf
 import numpy as np
 import sys
