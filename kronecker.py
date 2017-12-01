@@ -310,7 +310,7 @@ class KroneckerSolver:
 
         """
 
-        if Ks_new is not None:
+        if Ks_new is None:
             Ks = self.Ks
         else:
             Ks = Ks_new
